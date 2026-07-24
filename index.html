@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>AirSpotX — plané, longe & lagune sur une seule carte</title>
+<meta name="description" content="Planificateur de session vent : une carte satellite, un vent partagé, trois modes — Plané (trajectoire atteignable), Longe (fenêtre de vol au bout de la corde), Lagune (marée). Partageable par lien.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#0c1311; --panel:#12201c; --edge:#1e332d; --grid:#182823;
+    --ink:#e9efeb; --muted:#7f958d; --faint:#42544d;
+    --signal:#f2a23d; --wind:#43ccd6;
+    --danger:#e5544d; --ok:#79d29a; --warn:#e8c15a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:14px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #app{display:flex;height:100%}
+  #map{flex:1;background:#0a120f}
+  .leaflet-container{font:inherit}
+
+  #panel{width:330px;min-width:330px;overflow-y:auto;background:var(--panel);
+    border-right:1px solid var(--edge);padding:12px 14px;display:flex;flex-direction:column;gap:14px}
+  h1{font-size:17px;margin:0;letter-spacing:.4px}
+  h1 span{color:var(--wind)}
+  h1 b{color:var(--signal);font-weight:800}
+  .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+    margin:0 0 6px;border-bottom:1px solid var(--edge);padding-bottom:4px}
+  section{margin:0}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  select,button,input[type=number],input[type=text]{background:#0e1a16;color:var(--ink);
+    border:1px solid var(--edge);border-radius:6px;padding:6px 8px;font:inherit}
+  button{cursor:pointer}
+  button:hover{border-color:var(--wind)}
+  button.primary{background:#123039;border-color:#1d4d54;color:var(--wind);font-weight:600}
+  input[type=number]{width:70px;font-variant-numeric:tabular-nums}
+  input[type=range]{flex:1;accent-color:var(--wind);height:22px}
+  .kv{display:flex;justify-content:space-between;padding:2px 0;font-size:13px}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-variant-numeric:tabular-nums}
+  .big{font-size:20px;font-weight:700;color:var(--wind);font-variant-numeric:tabular-nums}
+  .msg{font-size:12px;color:var(--muted)}
+  .msg.err{color:var(--danger)} .msg.ok{color:var(--ok)} .msg.warn{color:var(--warn)}
+  .unit{color:var(--muted);font-size:12px}
+  label.fld{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:3px 0}
+
+  #searchWrap{position:relative;flex:1;min-width:0}
+  #searchBox{width:100%}
+  #searchRes{position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:1100;background:#0e1a16;
+    border:1px solid var(--edge);border-radius:6px;max-height:190px;overflow-y:auto;display:none}
+  #searchRes div{padding:6px 8px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--grid)}
+  #searchRes div:last-child{border-bottom:none}
+  #searchRes div:hover{background:#123029}
+
+  /* sélecteur de mode */
+  #modeTabs{display:flex;gap:4px;background:#0e1a16;border:1px solid var(--edge);border-radius:8px;padding:3px}
+  #modeTabs button{flex:1;border:none;background:none;color:var(--muted);padding:7px 4px;border-radius:6px;
+    font-weight:600;font-size:13px}
+  #modeTabs button.active{background:#123039;color:var(--wind)}
+  #modeTabs button:hover{color:var(--ink)}
+
+  /* vent partagé */
+  #windWrap{display:flex;gap:12px;align-items:center}
+  #compass{touch-action:none;cursor:pointer;flex:none}
+  #compass text{fill:var(--muted);font-size:11px;font-weight:600}
+  #compass .card-n{fill:var(--signal)}
+  #windReadout{flex:1}
+  #windReadout .big{color:var(--signal)}
+
+  /* liste des cordes (mode longe) */
+  #spotList{display:flex;flex-direction:column;gap:4px}
+  .spot-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--edge);
+    border-radius:6px;cursor:pointer;font-size:13px;font-variant-numeric:tabular-nums}
+  .spot-row:hover{background:#123029}
+  .spot-row.sel{border-color:var(--wind);background:#0f2a2e}
+  .spot-row .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .spot-row .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .spot-row .del,.spot-row .edit{background:none;border:none;color:var(--muted);font-size:14px;padding:0 2px}
+  .spot-row .del:hover{color:var(--danger)} .spot-row .edit:hover{color:var(--wind)}
+  .spot-row input.rename{flex:1;min-width:0;padding:2px 6px;font-size:13px}
+  .spot-empty{font-size:12px;color:var(--muted);padding:2px 0}
+
+  .verdict{font-size:15px;font-weight:700;padding:6px 8px;border-radius:6px;text-align:center;margin-top:4px}
+  .verdict.ok{background:rgba(121,210,154,.14);color:var(--ok)}
+  .verdict.warn{background:rgba(232,193,90,.14);color:var(--warn)}
+  .verdict.no{background:rgba(229,84,77,.16);color:var(--danger)}
+
+  details{border:1px solid var(--edge);border-radius:6px;padding:6px 8px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px}
+  details p{font-size:12px;color:var(--muted);margin:6px 0}
+
+  .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--ink);box-shadow:0 3px 14px rgba(0,0,0,.6)}
+  .anchor-icon,.pt-icon{filter:drop-shadow(0 0 4px #000)}
+  .handle-icon{filter:drop-shadow(0 0 3px #000);cursor:grab}
+  .rope-label{background:none;border:none;box-shadow:none}
+  .rope-label span{display:inline-block;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;
+    color:#eafcff;font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;
+    text-shadow:0 0 3px #000,0 0 6px #000,0 1px 2px #000}
+  .rope-label span small{display:block;font-size:11px;font-weight:600;color:#ffd9a0}
+  .rope-label.dim span{color:#b8cdd2;font-weight:600;opacity:.85}
+  .map-tag{background:none;border:none;box-shadow:none}
+  .map-tag span{display:inline-block;transform:translate(-50%,-50%);white-space:nowrap;
+    color:#eafcff;font-weight:700;font-size:12px;text-shadow:0 0 3px #000,0 0 6px #000}
+
+  #hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:1000;
+    background:rgba(18,32,28,.92);border:1px solid var(--edge);border-radius:8px;
+    padding:8px 14px;font-size:13px;color:var(--ink);pointer-events:none;white-space:nowrap;max-width:90vw}
+  #hint b{color:var(--wind)}
+
+  #mobileBar,#panelBackdrop{display:none}
+  @media (max-width:760px){
+    #app{height:100dvh}
+    #map{position:fixed;inset:0}
+    .leaflet-top{top:46px}
+    #hint{top:52px;white-space:normal;text-align:center}
+    #mobileBar{display:flex;position:fixed;top:0;left:0;right:0;z-index:1500;align-items:center;gap:10px;
+      height:42px;padding:0 12px;background:rgba(12,19,17,.92);backdrop-filter:blur(4px);
+      border-bottom:1px solid var(--edge);font-size:14px}
+    #mobileBar .mb-burger{font-size:20px;background:none;border:none;color:var(--wind);padding:2px 4px}
+    #mobileBar .mb-title{font-weight:700}
+    #mobileBar .mb-title span{color:var(--wind)} #mobileBar .mb-title b{color:var(--signal)}
+    #mobileBar .mb-read{margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+    #panel{position:fixed;top:42px;bottom:0;left:0;z-index:1600;width:min(330px,90vw);
+      transform:translateX(-105%);transition:transform .22s ease;box-shadow:6px 0 24px rgba(0,0,0,.5)}
+    #panel.open{transform:none}
+    #panelBackdrop{display:none;position:fixed;inset:0;z-index:1550;background:rgba(0,0,0,.45)}
+    #panelBackdrop.show{display:block}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="mobileBar">
+    <button class="mb-burger" id="mbBurger" aria-label="Menu">☰</button>
+    <div class="mb-title">Air<b>Spot</b><span>X</span></div>
+    <div class="mb-read" id="mbRead">—</div>
+  </div>
+  <div id="panelBackdrop"></div>
+
+  <div id="panel">
+    <header>
+      <h1>Air<b>Spot</b><span>X</span></h1>
+      <div class="sub">Une carte, un vent — plané, longe & lagune.</div>
+    </header>
+
+    <section>
+      <div class="row">
+        <div id="searchWrap"><input id="searchBox" type="text" placeholder="Chercher un spot…" autocomplete="off"><div id="searchRes"></div></div>
+        <button id="btnGeo" title="Ma position">📍</button>
+      </div>
+    </section>
+
+    <section>
+      <div id="modeTabs">
+        <button data-mode="glide">Plané</button>
+        <button data-mode="longe">Longe</button>
+        <button data-mode="lagune">Lagune</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Vent <span id="windWarn" class="msg err" style="text-transform:none;letter-spacing:0"></span></h2>
+      <div id="windWrap">
+        <svg id="compass" width="120" height="120" viewBox="0 0 120 120" aria-label="Direction du vent"></svg>
+        <div id="windReadout">
+          <div class="big" id="windBig">—</div>
+          <div class="msg">d'où vient le vent</div>
+          <div class="row" style="margin-top:6px">
+            <input id="windDir" type="number" min="0" max="359" step="1" value="270"><span class="unit">°</span>
+            <input id="windKt" type="number" min="0" max="80" step="1" value="15"><span class="unit">kt</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MODE PLANÉ ============ -->
+    <div id="mGlide">
+      <section>
+        <h2>Voile</h2>
+        <div class="row">
+          <select id="wingSel"></select>
+          <select id="sizeSel"></select>
+        </div>
+        <label class="fld">Vitesse best glide <span><input id="gVx" type="number" min="10" max="90" step="1"> <span class="unit">km/h</span></span></label>
+        <label class="fld">Finesse best (contour) <span><input id="gFbest" type="number" min="2" max="14" step="0.1"></span></label>
+        <label class="fld">Finesse prudente (sûr) <span><input id="gFplan" type="number" min="2" max="14" step="0.1"></span></label>
+      </section>
+      <section>
+        <h2>Vol</h2>
+        <label class="fld">Hauteur exploitable Δh <span><input id="gDh" type="number" min="10" max="4000" step="10" value="200"> <span class="unit">m</span></span></label>
+        <label class="fld">Marge sécu à l'arrivée <span><input id="gMargin" type="number" min="0" max="500" step="5" value="20"> <span class="unit">m</span></span></label>
+        <div class="row" style="margin-top:4px"><button id="gReset">Replacer départ/arrivée</button></div>
+      </section>
+      <section>
+        <h2>Résultat</h2>
+        <div class="kv"><span class="k">Distance</span><span class="v" id="gDist">—</span></div>
+        <div class="kv"><span class="k">Cap</span><span class="v" id="gBrg">—</span></div>
+        <div class="kv"><span class="k">Compo. vent</span><span class="v" id="gComp">—</span></div>
+        <div class="kv"><span class="k">Δh best / prudente</span><span class="v" id="gDrop">—</span></div>
+        <div class="kv"><span class="k">Clearance arrivée</span><span class="v" id="gClear">—</span></div>
+        <div class="kv"><span class="k">Temps de vol</span><span class="v" id="gTime">—</span></div>
+        <div class="kv"><span class="k">Vitesse sol</span><span class="v" id="gGs">—</span></div>
+        <div class="verdict" id="gVerdict" style="display:none"></div>
+      </section>
+    </div>
+
+    <!-- ============ MODE LONGE ============ -->
+    <div id="mLonge">
+      <section>
+        <h2>Cordes</h2>
+        <div id="spotList"></div>
+      </section>
+      <section>
+        <h2>Corde sélectionnée</h2>
+        <div class="row">
+          <input id="ropeRange" type="range" min="100" max="1000" step="10" value="300">
+          <input id="ropeNum" type="number" min="1" max="5000" step="1" value="300"><span class="unit">m</span>
+        </div>
+        <div class="kv" style="margin-top:6px"><span class="k">Surface</span><span class="v" id="lArea">—</span></div>
+        <div class="kv"><span class="k">Largeur travers</span><span class="v" id="lWide">—</span></div>
+      </section>
+    </div>
+
+    <!-- ============ MODE LAGUNE ============ -->
+    <div id="mLagune">
+      <section>
+        <h2>Marée & profondeur de lagune</h2>
+        <p class="msg">Le mode Lagune calcule, sur le relief LiDAR réel, <b>quand une lagune se met en eau et avec quelle profondeur</b> selon la marée. Son moteur (relief fin + remplissage hydraulique) est encore hébergé dans LagoonX ; son intégration native à AirSpotX arrive.</p>
+        <div class="row"><button id="openLagoon" class="primary">Ouvrir LagoonX ↗</button></div>
+      </section>
+    </div>
+
+    <section>
+      <div class="row"><button id="btnShare" class="primary">🔗 Partager la carte</button></div>
+      <div class="msg" id="shareMsg" style="margin-top:4px"></div>
+    </section>
+
+    <details>
+      <summary>Aide</summary>
+      <p><b>Vent</b> partagé par tous les modes : cadran (glisser) ou saisie ° + force (kt).</p>
+      <p><b>Plané</b> : clique pour poser <b>départ</b> puis <b>arrivée</b> (déplaçables). L'empreinte cyan = zone atteignable (surface = finesse prudente, contour = best glide), décalée sous le vent. Verdict ✓/⚠/✕ selon la marge.</p>
+      <p><b>Longe</b> : chaque clic pose une corde ; demi-cercle sous le vent = fenêtre de vol. ✎ pour renommer, poignée orange pour régler longueur + vent.</p>
+    </details>
+
+    <div class="msg">AirSpotX · satellite Esri · <a href="https://github.com/XavierKain/airspotx" style="color:var(--muted)">source</a></div>
+  </div>
+
+  <div id="map"></div>
+  <div id="hint"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+
+/* ============ voiles (extrait de GlideX/data/wings.json) ============ */
+const WINGS = {
+  flare_bandit:    { name:'Flare Bandit',     sizes:{ '10':{f:7.0,v:46},'13':{f:7.5,v:45},'16':{f:8.0,v:50},'19':{f:8.3,v:43},'22':{f:8.5,v:42} } },
+  flare_moustache2:{ name:'Flare Moustache 2', sizes:{ '13':{f:6.5,v:45},'15':{f:6.8,v:44},'18':{f:7.2,v:43},'22':{f:7.6,v:41},'26':{f:7.9,v:39} } },
+  flare_moustache: { name:'Flare Moustache 1', sizes:{ '15':{f:6.4,v:44},'18':{f:6.5,v:43} } },
+  paraglider_b:    { name:'Parapente B (ordre de grandeur)', sizes:{ 'S':{f:9.0,v:38},'M':{f:9.2,v:38},'L':{f:9.3,v:39} } },
+  custom:          { name:'Personnalisé', sizes:{ '—':{f:8.0,v:44} } }
+};
+
+/* ============ état ============ */
+const LS_KEY = 'airspotx-v1';
+const state = {
+  view: null,
+  wind: { dir: 270, kt: 15 },
+  mode: 'glide',
+  longe: { ropes: [], sel: -1 },
+  glide: { from:null, to:null, wingKey:'flare_bandit', wingSize:'16', vx:50, fBest:8, fPlan:6, dh:200, margin:20 }
+};
+
+function loadState(){
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('s')){
+    try { const d = JSON.parse(decodeURIComponent(h.get('s')));
+      if (d && typeof d === 'object'){ deepAssign(state, d); return true; } } catch(e){}
+  }
+  try { const d = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    if (d && typeof d === 'object') deepAssign(state, d); } catch(e){}
+  return false;
+}
+function deepAssign(dst, src){
+  for (const k in src){
+    if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k]) && dst[k] && typeof dst[k] === 'object')
+      deepAssign(dst[k], src[k]);
+    else dst[k] = src[k];
+  }
+}
+const fromShare = loadState();
+
+function shareState(){
+  const d = { wind:state.wind, mode:state.mode, view:state.view, longe:state.longe, glide:state.glide };
+  return '#s=' + encodeURIComponent(JSON.stringify(d));
+}
+function persist(){
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){}
+  history.replaceState(null, '', location.pathname + location.search + shareState());
+}
+
+/* ============ géométrie ============ */
+const R = 6371000, D2R = Math.PI/180, R2D = 180/Math.PI;
+const norm360 = d => ((d%360)+360)%360;
+const CARDS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
+const cardinal = deg => CARDS[Math.round(norm360(deg)/22.5) % 16];
+
+// sphérique (mode longe)
+function dest(lat, lng, brg, d){
+  const δ=d/R, θ=brg*D2R, φ1=lat*D2R, λ1=lng*D2R;
+  const φ2=Math.asin(Math.sin(φ1)*Math.cos(δ)+Math.cos(φ1)*Math.sin(δ)*Math.cos(θ));
+  const λ2=λ1+Math.atan2(Math.sin(θ)*Math.sin(δ)*Math.cos(φ1),Math.cos(δ)-Math.sin(φ1)*Math.sin(φ2));
+  return [φ2*R2D, λ2*R2D];
+}
+function distBearing(a, b){
+  const φ1=a.lat*D2R, φ2=b.lat*D2R, Δφ=(b.lat-a.lat)*D2R, Δλ=(b.lng-a.lng)*D2R;
+  const h=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  const dist=2*R*Math.asin(Math.sqrt(h));
+  const y=Math.sin(Δλ)*Math.cos(φ2), x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return { dist, brg:(Math.atan2(y,x)*R2D+360)%360 };
+}
+// ENU plate (mode plané) — précis à l'échelle km
+function enu(from, to){
+  return { dE:(to.lng-from.lng)*111320*Math.cos(from.lat*D2R), dN:(to.lat-from.lat)*111320 };
+}
+function offsetLL(from, dE, dN){
+  return [from.lat + dN/111320, from.lng + dE/(111320*Math.cos(from.lat*D2R))];
+}
+function windUnit(dir){ const t = norm360(dir+180)*D2R; return [Math.sin(t), Math.cos(t)]; } // vers où pousse le vent
+
+const fmtM = m => m>=1000 ? (m/1000).toFixed(2).replace(/\.?0+$/,'').replace('.',',')+' km' : Math.round(m)+' m';
+const fmtArea = m2 => m2>=10000 ? (m2/10000).toFixed(2).replace('.',',')+' ha' : Math.round(m2).toLocaleString('fr-FR')+' m²';
+const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ============ carte ============ */
+const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagerie © Esri'});
+const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
+const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenTopoMap'});
+const map = L.map('map',{ center: state.view?[state.view.lat,state.view.lng]:[46.6,2.4],
+  zoom: state.view?state.view.zoom:6, layers:[sat], zoomControl:true });
+L.control.layers({'Satellite':sat,'Plan (OSM)':osm,'Topo':topo},null,{position:'topright'}).addTo(map);
+L.control.scale({imperial:false}).addTo(map);
+map.on('moveend',()=>{ const c=map.getCenter();
+  state.view={lat:+c.lat.toFixed(5),lng:+c.lng.toFixed(5),zoom:map.getZoom()}; persist(); });
+
+const glideLayer = L.layerGroup().addTo(map);
+const longeLayer = L.layerGroup().addTo(map);
+
+/* ============ vent partagé (compas) ============ */
+const compass = document.getElementById('compass');
+function drawCompass(){
+  const c=60, r=52, w=state.wind.dir;
+  const P=(deg,rad)=>({x:c+rad*Math.sin(deg*D2R),y:c-rad*Math.cos(deg*D2R)});
+  let ticks='';
+  for(let a=0;a<360;a+=30){const big=a%90===0,o=P(a,r),i=P(a,r-(big?9:5));
+    ticks+=`<line x1="${o.x}" y1="${o.y}" x2="${i.x}" y2="${i.y}" stroke="${big?'#7f958d':'#42544d'}" stroke-width="${big?2:1}"/>`;}
+  const tail=P(w,r-12),tip=P(w+180,r-12), head=ang=>({x:tip.x+9*Math.sin(ang*D2R),y:tip.y-9*Math.cos(ang*D2R)});
+  const a1=norm360(w+180),h1=head(a1+150),h2=head(a1-150);
+  compass.innerHTML=`<circle cx="${c}" cy="${c}" r="${r}" fill="#0e1a16" stroke="#1e332d" stroke-width="2"/>`+ticks+
+    `<text x="${c}" y="${c-r+20}" text-anchor="middle" class="card-n">N</text>`+
+    `<text x="${c+r-19}" y="${c+4}" text-anchor="middle">E</text>`+
+    `<text x="${c}" y="${c+r-13}" text-anchor="middle">S</text>`+
+    `<text x="${c-r+19}" y="${c+4}" text-anchor="middle">O</text>`+
+    `<line x1="${tail.x}" y1="${tail.y}" x2="${tip.x}" y2="${tip.y}" stroke="#f2a23d" stroke-width="3" stroke-linecap="round"/>`+
+    `<polyline points="${h1.x},${h1.y} ${tip.x},${tip.y} ${h2.x},${h2.y}" fill="none" stroke="#f2a23d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`+
+    `<circle cx="${tail.x}" cy="${tail.y}" r="4" fill="#f2a23d"/>`;
+}
+function setWind(dir, kt){
+  if (dir!=null) state.wind.dir = norm360(Math.round(dir));
+  if (kt!=null) state.wind.kt = Math.max(0, Math.round(kt));
+  document.getElementById('windDir').value = state.wind.dir;
+  document.getElementById('windKt').value = state.wind.kt;
+  document.getElementById('windBig').textContent = state.wind.dir+'° · '+cardinal(state.wind.dir)+' · '+state.wind.kt+' kt';
+  drawCompass(); redrawActive();
+}
+let compassDrag=false;
+function compassPick(ev){
+  const rect=compass.getBoundingClientRect();
+  const x=ev.clientX-rect.left-rect.width/2, y=ev.clientY-rect.top-rect.height/2;
+  if(x===0&&y===0)return;
+  setWind(norm360(Math.atan2(x,-y)*R2D), null);
+}
+compass.addEventListener('pointerdown',ev=>{compassDrag=true;compass.setPointerCapture(ev.pointerId);compassPick(ev);});
+compass.addEventListener('pointermove',ev=>{if(compassDrag)compassPick(ev);});
+compass.addEventListener('pointerup',()=>{compassDrag=false;persist();});
+document.getElementById('windDir').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(v,null);persist();}});
+document.getElementById('windKt').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(null,v);persist();}});
+
+/* ============ MODE PLANÉ ============ */
+const g = state.glide;
+let gFrom=null, gTo=null; // markers
+const ptIcon = (color,letter)=>L.divIcon({className:'pt-icon',iconSize:[26,26],iconAnchor:[13,13],
+  html:`<svg width="26" height="26"><circle cx="13" cy="13" r="11" fill="#12201c" stroke="${color}" stroke-width="2"/><text x="13" y="17" text-anchor="middle" fill="${color}" font-size="12" font-weight="700">${letter}</text></svg>`});
+
+function fillWingSelectors(){
+  const ws=document.getElementById('wingSel'), ss=document.getElementById('sizeSel');
+  ws.innerHTML=''; Object.keys(WINGS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=WINGS[k].name;ws.appendChild(o);});
+  ws.value=g.wingKey;
+  ss.innerHTML=''; Object.keys(WINGS[g.wingKey].sizes).forEach(sz=>{const o=document.createElement('option');o.value=sz;o.textContent=sz;ss.appendChild(o);});
+  if(!(g.wingSize in WINGS[g.wingKey].sizes)) g.wingSize=Object.keys(WINGS[g.wingKey].sizes)[0];
+  ss.value=g.wingSize;
+}
+function applyWing(){
+  const w=WINGS[g.wingKey].sizes[g.wingSize];
+  g.vx=w.v; g.fBest=w.f; g.fPlan=Math.max(2,Math.round(w.f*0.8*10)/10);
+  document.getElementById('gVx').value=g.vx;
+  document.getElementById('gFbest').value=g.fBest;
+  document.getElementById('gFplan').value=g.fPlan;
+}
+function glideK(){
+  const Vx=g.vx/3.6, W=state.wind.kt*0.514444;
+  return { k:Math.min(0.985, Vx>0?W/Vx:0.985), Vx, W, over: W>=Vx };
+}
+function footprintPoly(from, R0, k, u){
+  const cx=R0*k*u[0], cy=R0*k*u[1], pts=[];
+  for(let a=0;a<360;a+=5) pts.push(offsetLL(from, cx+R0*Math.sin(a*D2R), cy+R0*Math.cos(a*D2R)));
+  return pts;
+}
+function glideRedraw(){
+  glideLayer.clearLayers();
+  const hint=document.getElementById('hint');
+  if(state.mode==='glide') hint.style.display = g.to ? 'none' : '';
+  if(!g.from){ if(gFrom){map.removeLayer(gFrom);gFrom=null;} if(gTo){map.removeLayer(gTo);gTo=null;} glideReadouts(null); return; }
+
+  const {k,Vx,W,over}=glideK(), u=windUnit(state.wind.dir);
+  document.getElementById('windWarn').textContent = over ? '⚠ vent ≥ vitesse air : plané face au vent impossible' : '';
+
+  // empreinte autour du départ
+  const dh=Math.max(0,g.dh), R0b=g.fBest*dh, R0p=g.fPlan*dh;
+  L.polygon(footprintPoly(g.from,R0p,k,u),{color:'#43ccd6',weight:1.5,opacity:.6,fillColor:'#43ccd6',fillOpacity:.18,interactive:false}).addTo(glideLayer);
+  L.polygon(footprintPoly(g.from,R0b,k,u),{color:'#e9efeb',weight:1.2,opacity:.5,dashArray:'6 7',fill:false,interactive:false}).addTo(glideLayer);
+  // flèche vent
+  const at=dest(g.from.lat,g.from.lng,state.wind.dir,R0b*1.28||120), ap=dest(g.from.lat,g.from.lng,state.wind.dir,R0b*1.05||90);
+  L.polyline([at,ap],{color:'#f2a23d',weight:3,opacity:.9,interactive:false}).addTo(glideLayer);
+
+  // marqueurs
+  if(!gFrom){ gFrom=L.marker([g.from.lat,g.from.lng],{icon:ptIcon('#43ccd6','D'),draggable:true}).addTo(map);
+    gFrom.on('drag',e=>{const p=e.target.getLatLng();g.from={lat:+p.lat.toFixed(6),lng:+p.lng.toFixed(6)};glideRedraw();});
+    gFrom.on('dragend',persist);
+  } else gFrom.setLatLng([g.from.lat,g.from.lng]);
+
+  if(g.to){
+    if(!gTo){ gTo=L.marker([g.to.lat,g.to.lng],{icon:ptIcon('#f2a23d','A'),draggable:true}).addTo(map);
+      gTo.on('drag',e=>{const p=e.target.getLatLng();g.to={lat:+p.lat.toFixed(6),lng:+p.lng.toFixed(6)};glideRedraw();});
+      gTo.on('dragend',persist);
+    } else gTo.setLatLng([g.to.lat,g.to.lng]);
+    L.polyline([[g.from.lat,g.from.lng],[g.to.lat,g.to.lng]],{color:'#f2a23d',weight:2,opacity:.85,dashArray:'4 5',interactive:false}).addTo(glideLayer);
+    glideReadouts(computeLeg(k,Vx,W,u));
+  } else { if(gTo){map.removeLayer(gTo);gTo=null;} glideReadouts(null); }
+}
+function computeLeg(k,Vx,W,u){
+  const {dE,dN}=enu(g.from,g.to), pu=dE*u[0]+dN*u[1], D=Math.hypot(dE,dN), k2=k*k;
+  const R0=(Math.sqrt(k2*pu*pu+(1-k2)*D*D)-k*pu)/(1-k2);
+  const dhBest=R0/g.fBest, dhPlan=R0/g.fPlan, t=R0/Vx, gs=t>0?D/t:0;
+  const brg=distBearing(g.from,g.to).brg;
+  const clearBest=g.dh-dhBest, clearPlan=g.dh-dhPlan, comp=(D>0?pu/D:0)*W;
+  let verdict='no';
+  if(clearPlan>=g.margin) verdict='ok'; else if(clearBest>=g.margin) verdict='warn';
+  return {D,brg,R0,dhBest,dhPlan,t,gs,clearBest,clearPlan,comp,verdict};
+}
+function glideReadouts(r){
+  const set=(id,v)=>document.getElementById(id).textContent=v;
+  const vd=document.getElementById('gVerdict');
+  if(!r){ ['gDist','gBrg','gComp','gDrop','gClear','gTime','gGs'].forEach(id=>set(id,'—')); vd.style.display='none';
+    document.getElementById('mbRead').textContent='Plané · vent '+state.wind.dir+'° '+state.wind.kt+'kt'; return; }
+  set('gDist',fmtM(r.D)); set('gBrg',Math.round(r.brg)+'° '+cardinal(r.brg));
+  set('gComp',(r.comp>=0?'+':'')+r.comp.toFixed(1)+' m/s '+(r.comp>=0?'(arrière)':'(face)'));
+  set('gDrop',Math.round(r.dhBest)+' / '+Math.round(r.dhPlan)+' m');
+  set('gClear',Math.round(r.clearBest)+' / '+Math.round(r.clearPlan)+' m');
+  set('gTime',r.t.toFixed(0)+' s'); set('gGs',(r.gs*3.6).toFixed(0)+' km/h');
+  vd.style.display=''; vd.className='verdict '+r.verdict;
+  vd.textContent = r.verdict==='ok'?'✓ Atteignable avec marge':r.verdict==='warn'?'⚠ Seulement au best glide':'✕ Hors de portée';
+  document.getElementById('mbRead').textContent='Plané · '+fmtM(r.D)+' · '+(r.verdict==='ok'?'✓':r.verdict==='warn'?'⚠':'✕');
+}
+// contrôles plané
+document.getElementById('wingSel').addEventListener('change',e=>{g.wingKey=e.target.value;fillWingSelectors();applyWing();glideRedraw();persist();});
+document.getElementById('sizeSel').addEventListener('change',e=>{g.wingSize=e.target.value;applyWing();glideRedraw();persist();});
+['gVx','gFbest','gFplan','gDh','gMargin'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',e=>{
+    const v=+e.target.value; if(!Number.isFinite(v))return;
+    if(id==='gVx')g.vx=v; else if(id==='gFbest')g.fBest=v; else if(id==='gFplan')g.fPlan=v;
+    else if(id==='gDh')g.dh=v; else if(id==='gMargin')g.margin=v;
+    if(id!=='gVx'&&id!=='gFbest'&&id!=='gFplan'){} glideRedraw(); persist();
+  });
+});
+document.getElementById('gReset').addEventListener('click',()=>{g.from=null;g.to=null;glideRedraw();persist();});
+
+/* ============ MODE LONGE ============ */
+const L_ = state.longe;
+let anchorMarkers=[], handleMarker=null;
+const anchorIcon=sel=>L.divIcon({className:'anchor-icon',iconSize:[26,26],iconAnchor:[13,13],
+  html:`<svg width="26" height="26"><circle cx="13" cy="13" r="11" fill="#12201c" stroke="${sel?'#43ccd6':'#7f958d'}" stroke-width="2"/><circle cx="13" cy="13" r="3.2" fill="${sel?'#43ccd6':'#7f958d'}"/></svg>`});
+const handleIcon=L.divIcon({className:'handle-icon',iconSize:[20,20],iconAnchor:[10,10],
+  html:'<svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#f2a23d" stroke="#0c1311" stroke-width="2"/></svg>'});
+const selRope=()=>L_.sel>=0?L_.ropes[L_.sel]:null;
+const ropeName=(p,i)=>p.name||'Corde '+(i+1);
+
+function longeRedraw(){
+  longeLayer.clearLayers();
+  const hint=document.getElementById('hint');
+  if(state.mode==='longe') hint.style.display = L_.ropes.length ? 'none' : '';
+  const down=norm360(state.wind.dir+180);
+  L_.ropes.forEach((p,i)=>{
+    const sel=i===L_.sel, circle=[], arc=[[p.lat,p.lng]];
+    for(let a=0;a<360;a+=4) circle.push(dest(p.lat,p.lng,a,p.rope));
+    for(let a=-90;a<=90;a+=3) arc.push(dest(p.lat,p.lng,down+a,p.rope));
+    L.polygon(circle,{color:'#e9efeb',weight:sel?1.2:1,opacity:sel?.55:.3,dashArray:'6 7',fill:false,interactive:false}).addTo(longeLayer);
+    L.polygon(arc,{color:'#43ccd6',weight:sel?2:1.4,opacity:sel?.95:.55,fillColor:'#43ccd6',fillOpacity:sel?.22:.10,interactive:false}).addTo(longeLayer);
+    const mid=dest(p.lat,p.lng,down,p.rope*0.52);
+    L.marker(mid,{icon:L.divIcon({className:'rope-label'+(sel?'':' dim'),html:`<span>${p.name?`<small>${esc(p.name)}</small>`:''}${fmtM(p.rope)}</span>`,iconSize:[0,0]}),interactive:false,keyboard:false}).addTo(longeLayer);
+  });
+  // flèche vent globale sur la corde sélectionnée
+  const p=selRope();
+  if(p){
+    const tail=dest(p.lat,p.lng,state.wind.dir,p.rope*1.32),tip=dest(p.lat,p.lng,state.wind.dir,p.rope*1.06);
+    const hl=Math.max(p.rope*0.09,3),h1=dest(tip[0],tip[1],state.wind.dir+32,hl),h2=dest(tip[0],tip[1],state.wind.dir-32,hl);
+    L.polyline([tail,tip],{color:'#f2a23d',weight:3,opacity:.95,interactive:false}).addTo(longeLayer);
+    L.polyline([h1,tip,h2],{color:'#f2a23d',weight:3,opacity:.95,interactive:false}).addTo(longeLayer);
+  }
+  positionHandle(); longeReadouts();
+}
+function positionHandle(){
+  const p=selRope();
+  if(!p||state.mode!=='longe'){ if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} return; }
+  const hp=dest(p.lat,p.lng,norm360(state.wind.dir+180),p.rope);
+  if(!handleMarker){
+    handleMarker=L.marker(hp,{icon:handleIcon,draggable:true,zIndexOffset:800}).addTo(map);
+    handleMarker.on('drag',e=>{const p2=selRope();if(!p2)return;const q=e.target.getLatLng();
+      const {dist,brg}=distBearing(p2,{lat:q.lat,lng:q.lng});
+      p2.rope=Math.min(5000,Math.max(1,Math.round(dist)));
+      setWind(norm360(brg+180),null); syncRopeInputs(); longeRedraw(); renderSpotList();});
+    handleMarker.on('dragend',persist);
+  } else handleMarker.setLatLng(hp);
+}
+function renderMarkers(){
+  anchorMarkers.forEach(m=>map.removeLayer(m)); anchorMarkers=[];
+  if(state.mode!=='longe')return;
+  anchorMarkers=L_.ropes.map((p,i)=>{
+    const m=L.marker([p.lat,p.lng],{icon:anchorIcon(i===L_.sel),draggable:true,title:`${ropeName(p,i)} — ${fmtM(p.rope)}`,zIndexOffset:i===L_.sel?700:400}).addTo(map);
+    m.on('click',()=>selectRope(i));
+    m.on('dragstart',()=>{if(L_.sel!==i)selectRope(i);});
+    m.on('drag',e=>{const q=e.target.getLatLng();p.lat=+q.lat.toFixed(6);p.lng=+q.lng.toFixed(6);longeRedraw();});
+    m.on('dragend',()=>{persist();renderSpotList();});
+    return m;
+  });
+}
+function selectRope(i){ L_.sel=i; renderMarkers(); longeRedraw(); renderSpotList(); syncRopeInputs(); persist(); }
+function addRope(lat,lng){
+  const prev=selRope()||L_.ropes[L_.ropes.length-1];
+  L_.ropes.push({lat:+lat.toFixed(6),lng:+lng.toFixed(6),rope:prev?prev.rope:300});
+  selectRope(L_.ropes.length-1);
+}
+function deleteRope(i){ L_.ropes.splice(i,1); if(L_.sel>=L_.ropes.length)L_.sel=L_.ropes.length-1;
+  renderMarkers(); longeRedraw(); renderSpotList(); syncRopeInputs(); persist(); }
+function longeReadouts(){
+  const p=selRope();
+  document.getElementById('lArea').textContent=p?fmtArea(Math.PI*p.rope*p.rope/2):'—';
+  document.getElementById('lWide').textContent=p?fmtM(p.rope*2):'—';
+  if(state.mode==='longe') document.getElementById('mbRead').textContent=p?ropeName(p,L_.sel)+' · '+fmtM(p.rope):'—';
+}
+const spotList=document.getElementById('spotList');
+function renderSpotList(){
+  spotList.innerHTML='';
+  if(!L_.ropes.length){spotList.innerHTML='<div class="spot-empty">Cliquez sur la carte pour poser une corde.</div>';return;}
+  L_.ropes.forEach((p,i)=>{
+    const row=document.createElement('div');
+    row.className='spot-row'+(i===L_.sel?' sel':'');
+    row.innerHTML=`<span class="dot" style="background:${i===L_.sel?'#43ccd6':'#7f958d'}"></span>`+
+      `<span class="lbl">${esc(ropeName(p,i))} — ${fmtM(p.rope)}</span>`+
+      `<button class="edit" title="Renommer">✎</button><button class="del" title="Supprimer">✕</button>`;
+    row.addEventListener('click',e=>{
+      if(e.target.classList.contains('del')){deleteRope(i);return;}
+      if(e.target.classList.contains('edit')){renameRope(row,p,i);return;}
+      selectRope(i); map.panTo([p.lat,p.lng]);
+    });
+    row.addEventListener('dblclick',()=>renameRope(row,p,i));
+    spotList.appendChild(row);
+  });
+}
+function renameRope(row,p,i){
+  const lbl=row.querySelector('.lbl'); if(!lbl)return;
+  const input=document.createElement('input');
+  input.type='text'; input.className='rename'; input.maxLength=40; input.placeholder='Corde '+(i+1); input.value=p.name||'';
+  lbl.replaceWith(input); input.focus(); input.select();
+  let done=false;
+  const commit=()=>{if(done)return;done=true;const v=input.value.trim();if(v)p.name=v;else delete p.name;
+    renderSpotList();renderMarkers();longeRedraw();persist();};
+  input.addEventListener('keydown',e=>{if(e.key==='Enter')commit();else if(e.key==='Escape'){done=true;renderSpotList();}});
+  input.addEventListener('blur',commit);
+  input.addEventListener('click',e=>e.stopPropagation());
+}
+function syncRopeInputs(){ const p=selRope(); if(!p)return;
+  document.getElementById('ropeRange').value=Math.min(1000,Math.max(100,p.rope));
+  document.getElementById('ropeNum').value=p.rope;
+}
+document.getElementById('ropeRange').addEventListener('input',()=>{const p=selRope();if(!p)return;
+  p.rope=+document.getElementById('ropeRange').value;document.getElementById('ropeNum').value=p.rope;longeRedraw();renderSpotList();});
+document.getElementById('ropeRange').addEventListener('change',persist);
+document.getElementById('ropeNum').addEventListener('input',()=>{const p=selRope();if(!p)return;
+  const v=Math.round(+document.getElementById('ropeNum').value);if(Number.isFinite(v)&&v>=1){
+    p.rope=Math.min(5000,v);document.getElementById('ropeRange').value=Math.min(1000,Math.max(100,v));longeRedraw();renderSpotList();persist();}});
+
+/* ============ modes ============ */
+const HINTS={ glide:'Cliquez pour poser le <b>départ</b>, puis l\'<b>arrivée</b>', longe:'Cliquez pour poser une <b>corde</b>', lagune:'' };
+function redrawActive(){ if(state.mode==='glide')glideRedraw(); else if(state.mode==='longe')longeRedraw(); }
+let mapClick=null;
+function switchMode(m){
+  state.mode=m;
+  document.querySelectorAll('#modeTabs button').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+  document.getElementById('mGlide').style.display=m==='glide'?'':'none';
+  document.getElementById('mLonge').style.display=m==='longe'?'':'none';
+  document.getElementById('mLagune').style.display=m==='lagune'?'':'none';
+  const hint=document.getElementById('hint'); hint.innerHTML=HINTS[m]||'';
+  // nettoie les marqueurs des autres modes
+  if(m!=='glide'){ if(gFrom){map.removeLayer(gFrom);gFrom=null;} if(gTo){map.removeLayer(gTo);gTo=null;} glideLayer.clearLayers(); }
+  if(m!=='longe'){ anchorMarkers.forEach(x=>map.removeLayer(x));anchorMarkers=[]; if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} longeLayer.clearLayers(); }
+  if(m==='glide'){ fillWingSelectors(); glideRedraw(); }
+  else if(m==='longe'){ renderMarkers(); renderSpotList(); syncRopeInputs(); longeRedraw(); }
+  else { hint.style.display='none'; document.getElementById('mbRead').textContent='Lagune'; }
+  persist();
+}
+document.querySelectorAll('#modeTabs button').forEach(b=>b.addEventListener('click',()=>switchMode(b.dataset.mode)));
+
+map.on('click',e=>{
+  if(state.mode==='glide'){
+    if(!g.from) g.from={lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};
+    else if(!g.to) g.to={lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};
+    else g.to={lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};
+    glideRedraw(); persist();
+  } else if(state.mode==='longe'){ addRope(e.latlng.lat,e.latlng.lng); }
+});
+
+document.getElementById('openLagoon').addEventListener('click',()=>window.open('https://lagoonx.xavier-kain.fr/','_blank'));
+
+/* ============ partage / recherche / géoloc / mobile ============ */
+document.getElementById('btnShare').addEventListener('click',async()=>{
+  const msg=document.getElementById('shareMsg'); persist();
+  try{ await navigator.clipboard.writeText(location.href); msg.textContent='Lien copié ✓'; msg.className='msg ok'; }
+  catch(e){ window.prompt('Copier le lien :',location.href); msg.textContent=''; }
+  setTimeout(()=>{msg.textContent='';},5000);
+});
+document.getElementById('btnGeo').addEventListener('click',()=>{ if(!navigator.geolocation)return;
+  navigator.geolocation.getCurrentPosition(p=>map.setView([p.coords.latitude,p.coords.longitude],16),()=>alert('Position indisponible'),{enableHighAccuracy:true,timeout:8000}); });
+
+const searchBox=document.getElementById('searchBox'), searchRes=document.getElementById('searchRes');
+let searchTimer=null;
+searchBox.addEventListener('input',()=>{ clearTimeout(searchTimer); const q=searchBox.value.trim();
+  if(q.length<3){searchRes.style.display='none';return;}
+  searchTimer=setTimeout(async()=>{ try{
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q='+encodeURIComponent(q),{headers:{'Accept-Language':'fr'}});
+    const items=await r.json(); searchRes.innerHTML='';
+    items.forEach(it=>{const d=document.createElement('div');d.textContent=it.display_name;
+      d.addEventListener('click',()=>{searchRes.style.display='none';searchBox.value=it.display_name.split(',')[0];map.setView([+it.lat,+it.lon],15);});searchRes.appendChild(d);});
+    searchRes.style.display=items.length?'block':'none';
+  }catch(e){searchRes.style.display='none';} },350);
+});
+document.addEventListener('click',e=>{if(!searchRes.contains(e.target)&&e.target!==searchBox)searchRes.style.display='none';});
+
+const panel=document.getElementById('panel'), backdrop=document.getElementById('panelBackdrop');
+document.getElementById('mbBurger').addEventListener('click',()=>{panel.classList.toggle('open');backdrop.classList.toggle('show',panel.classList.contains('open'));});
+backdrop.addEventListener('click',()=>{panel.classList.remove('open');backdrop.classList.remove('show');});
+
+/* ============ init ============ */
+fillWingSelectors();
+document.getElementById('gVx').value=g.vx; document.getElementById('gFbest').value=g.fBest;
+document.getElementById('gFplan').value=g.fPlan; document.getElementById('gDh').value=g.dh; document.getElementById('gMargin').value=g.margin;
+setWind(state.wind.dir, state.wind.kt);
+switchMode(state.mode);
+if(!state.view && fromShare){
+  const pts=[];
+  L_.ropes.forEach(p=>pts.push([p.lat,p.lng])); if(g.from)pts.push([g.from.lat,g.from.lng]); if(g.to)pts.push([g.to.lat,g.to.lng]);
+  if(pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.4));
+}
+persist();
+</script>
+</body>
+</html>
