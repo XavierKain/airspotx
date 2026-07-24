@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>AirSpotX — plané, longe & lagune sur une seule carte</title>
-<meta name="description" content="Planificateur de session vent : une carte satellite, un vent partagé, trois modes — Plané (trajectoire atteignable), Longe (fenêtre de vol au bout de la corde), Lagune (marée). Partageable par lien.">
+<title>AirSpotX — GlideX · AirsurfX · LagoonX sur une seule carte</title>
+<meta name="description" content="Planificateur de session vent : une carte satellite, un vent partagé, trois calques superposables — GlideX (plané atteignable), AirsurfX (fenêtre de vol au bout de la corde), LagoonX (marée & profondeur de lagune sur relief réel).">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
@@ -16,15 +16,15 @@
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
     font:14px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  #app{display:flex;height:100%}
+  #app{display:flex;flex-direction:column;height:100%}
+  #main{display:flex;flex:1;min-height:0}
   #map{flex:1;background:#0a120f}
   .leaflet-container{font:inherit}
 
-  #panel{width:330px;min-width:330px;overflow-y:auto;background:var(--panel);
-    border-right:1px solid var(--edge);padding:12px 14px;display:flex;flex-direction:column;gap:14px}
+  #panel{width:334px;min-width:334px;overflow-y:auto;background:var(--panel);
+    border-right:1px solid var(--edge);padding:12px 14px;display:flex;flex-direction:column;gap:13px}
   h1{font-size:17px;margin:0;letter-spacing:.4px}
-  h1 span{color:var(--wind)}
-  h1 b{color:var(--signal);font-weight:800}
+  h1 .s{color:var(--signal);font-weight:800} h1 .x{color:var(--wind)}
   .sub{color:var(--muted);font-size:12px;margin-top:2px}
   h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
     margin:0 0 6px;border-bottom:1px solid var(--edge);padding-bottom:4px}
@@ -32,49 +32,44 @@
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   select,button,input[type=number],input[type=text]{background:#0e1a16;color:var(--ink);
     border:1px solid var(--edge);border-radius:6px;padding:6px 8px;font:inherit}
-  button{cursor:pointer}
-  button:hover{border-color:var(--wind)}
+  button{cursor:pointer} button:hover{border-color:var(--wind)}
   button.primary{background:#123039;border-color:#1d4d54;color:var(--wind);font-weight:600}
-  input[type=number]{width:70px;font-variant-numeric:tabular-nums}
+  button:disabled{opacity:.5;cursor:default}
+  input[type=number]{width:68px;font-variant-numeric:tabular-nums}
   input[type=range]{flex:1;accent-color:var(--wind);height:22px}
   .kv{display:flex;justify-content:space-between;padding:2px 0;font-size:13px}
-  .kv .k{color:var(--muted)}
-  .kv .v{font-variant-numeric:tabular-nums}
+  .kv .k{color:var(--muted)} .kv .v{font-variant-numeric:tabular-nums}
   .big{font-size:20px;font-weight:700;color:var(--wind);font-variant-numeric:tabular-nums}
   .msg{font-size:12px;color:var(--muted)}
   .msg.err{color:var(--danger)} .msg.ok{color:var(--ok)} .msg.warn{color:var(--warn)}
   .unit{color:var(--muted);font-size:12px}
   label.fld{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:3px 0}
+  label.inline{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+  input[type=checkbox]{accent-color:var(--wind)}
 
   #searchWrap{position:relative;flex:1;min-width:0}
   #searchBox{width:100%}
   #searchRes{position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:1100;background:#0e1a16;
     border:1px solid var(--edge);border-radius:6px;max-height:190px;overflow-y:auto;display:none}
   #searchRes div{padding:6px 8px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--grid)}
-  #searchRes div:last-child{border-bottom:none}
-  #searchRes div:hover{background:#123029}
+  #searchRes div:last-child{border-bottom:none} #searchRes div:hover{background:#123029}
 
-  /* sélecteur de mode */
   #modeTabs{display:flex;gap:4px;background:#0e1a16;border:1px solid var(--edge);border-radius:8px;padding:3px}
-  #modeTabs button{flex:1;border:none;background:none;color:var(--muted);padding:7px 4px;border-radius:6px;
-    font-weight:600;font-size:13px}
+  #modeTabs button{flex:1;border:none;background:none;color:var(--muted);padding:7px 3px;border-radius:6px;font-weight:700;font-size:12.5px}
   #modeTabs button.active{background:#123039;color:var(--wind)}
   #modeTabs button:hover{color:var(--ink)}
+  #layers{display:flex;gap:12px;flex-wrap:wrap}
+  #layers label{font-size:12px}
 
-  /* vent partagé */
   #windWrap{display:flex;gap:12px;align-items:center}
   #compass{touch-action:none;cursor:pointer;flex:none}
-  #compass text{fill:var(--muted);font-size:11px;font-weight:600}
-  #compass .card-n{fill:var(--signal)}
-  #windReadout{flex:1}
-  #windReadout .big{color:var(--signal)}
+  #compass text{fill:var(--muted);font-size:11px;font-weight:600} #compass .card-n{fill:var(--signal)}
+  #windReadout{flex:1} #windReadout .big{color:var(--signal)}
 
-  /* liste des cordes (mode longe) */
   #spotList{display:flex;flex-direction:column;gap:4px}
   .spot-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--edge);
     border-radius:6px;cursor:pointer;font-size:13px;font-variant-numeric:tabular-nums}
-  .spot-row:hover{background:#123029}
-  .spot-row.sel{border-color:var(--wind);background:#0f2a2e}
+  .spot-row:hover{background:#123029} .spot-row.sel{border-color:var(--wind);background:#0f2a2e}
   .spot-row .dot{width:10px;height:10px;border-radius:50%;flex:none}
   .spot-row .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .spot-row .del,.spot-row .edit{background:none;border:none;color:var(--muted);font-size:14px;padding:0 2px}
@@ -87,46 +82,62 @@
   .verdict.warn{background:rgba(232,193,90,.14);color:var(--warn)}
   .verdict.no{background:rgba(229,84,77,.16);color:var(--danger)}
 
+  .tide-ev{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;
+    border-bottom:1px dashed var(--grid);font-variant-numeric:tabular-nums;font-size:13px}
+  .tide-ev:last-child{border-bottom:none}
+  .tide-ev .pm{color:var(--wind);font-weight:600} .tide-ev .bm{color:var(--signal);font-weight:600}
+  .tide-ev .t{color:var(--muted);flex:1;text-align:center} .tide-ev .coef{color:var(--muted);font-size:12px}
+
   details{border:1px solid var(--edge);border-radius:6px;padding:6px 8px}
   details summary{cursor:pointer;color:var(--muted);font-size:12px}
   details p{font-size:12px;color:var(--muted);margin:6px 0}
 
   .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--ink);box-shadow:0 3px 14px rgba(0,0,0,.6)}
+  .leaflet-popup-content{margin:10px 12px;font:13px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif}
   .anchor-icon,.pt-icon{filter:drop-shadow(0 0 4px #000)}
   .handle-icon{filter:drop-shadow(0 0 3px #000);cursor:grab}
   .rope-label{background:none;border:none;box-shadow:none}
   .rope-label span{display:inline-block;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;
-    color:#eafcff;font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;
-    text-shadow:0 0 3px #000,0 0 6px #000,0 1px 2px #000}
+    color:#eafcff;font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;text-shadow:0 0 3px #000,0 0 6px #000,0 1px 2px #000}
   .rope-label span small{display:block;font-size:11px;font-weight:600;color:#ffd9a0}
   .rope-label.dim span{color:#b8cdd2;font-weight:600;opacity:.85}
-  .map-tag{background:none;border:none;box-shadow:none}
-  .map-tag span{display:inline-block;transform:translate(-50%,-50%);white-space:nowrap;
-    color:#eafcff;font-weight:700;font-size:12px;text-shadow:0 0 3px #000,0 0 6px #000}
+  .leaflet-image-layer.lagoon-overlay{image-rendering:pixelated;mix-blend-mode:normal}
 
   #hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:1000;
     background:rgba(18,32,28,.92);border:1px solid var(--edge);border-radius:8px;
     padding:8px 14px;font-size:13px;color:var(--ink);pointer-events:none;white-space:nowrap;max-width:90vw}
   #hint b{color:var(--wind)}
+  #legend{position:absolute;bottom:10px;right:10px;z-index:1000;background:rgba(18,32,28,.92);
+    border:1px solid var(--edge);border-radius:6px;padding:6px 10px;font-size:11px;display:none}
+  #legend .lrow{display:flex;align-items:center;gap:6px;margin:2px 0}
+  #legend .sw{width:22px;height:11px;border-radius:2px} #legend .lt{color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* barre temporelle (LagoonX) */
+  #timebar{display:none;background:var(--panel);border-top:1px solid var(--edge);padding:8px 12px}
+  #timebar.on{display:block}
+  #timerow{display:flex;align-items:center;gap:8px}
+  #timelabel{min-width:170px;text-align:center;font-variant-numeric:tabular-nums;font-weight:600}
+  #timelabel small{color:var(--muted);font-weight:400}
+  .tnudge{font-variant-numeric:tabular-nums;font-weight:600}
 
   #mobileBar,#panelBackdrop{display:none}
   @media (max-width:760px){
-    #app{height:100dvh}
+    #main{flex-direction:column;position:relative}
     #map{position:fixed;inset:0}
-    .leaflet-top{top:46px}
-    #hint{top:52px;white-space:normal;text-align:center}
+    .leaflet-top{top:46px} #hint{top:52px;white-space:normal;text-align:center} #legend{bottom:96px}
     #mobileBar{display:flex;position:fixed;top:0;left:0;right:0;z-index:1500;align-items:center;gap:10px;
-      height:42px;padding:0 12px;background:rgba(12,19,17,.92);backdrop-filter:blur(4px);
-      border-bottom:1px solid var(--edge);font-size:14px}
+      height:42px;padding:0 12px;background:rgba(12,19,17,.92);backdrop-filter:blur(4px);border-bottom:1px solid var(--edge);font-size:14px}
     #mobileBar .mb-burger{font-size:20px;background:none;border:none;color:var(--wind);padding:2px 4px}
     #mobileBar .mb-title{font-weight:700}
-    #mobileBar .mb-title span{color:var(--wind)} #mobileBar .mb-title b{color:var(--signal)}
+    #mobileBar .mb-title .s{color:var(--signal)} #mobileBar .mb-title .x{color:var(--wind)}
     #mobileBar .mb-read{margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
-    #panel{position:fixed;top:42px;bottom:0;left:0;z-index:1600;width:min(330px,90vw);
+    #panel{position:fixed;top:42px;bottom:0;left:0;z-index:1600;width:min(334px,92vw);
       transform:translateX(-105%);transition:transform .22s ease;box-shadow:6px 0 24px rgba(0,0,0,.5)}
     #panel.open{transform:none}
     #panelBackdrop{display:none;position:fixed;inset:0;z-index:1550;background:rgba(0,0,0,.45)}
     #panelBackdrop.show{display:block}
+    #timebar{position:fixed;bottom:0;left:0;right:0;z-index:1400}
+    #timelabel{min-width:120px}
   }
 </style>
 </head>
@@ -134,15 +145,16 @@
 <div id="app">
   <div id="mobileBar">
     <button class="mb-burger" id="mbBurger" aria-label="Menu">☰</button>
-    <div class="mb-title">Air<b>Spot</b><span>X</span></div>
+    <div class="mb-title">Air<span class="s">Spot</span><span class="x">X</span></div>
     <div class="mb-read" id="mbRead">—</div>
   </div>
   <div id="panelBackdrop"></div>
 
+  <div id="main">
   <div id="panel">
     <header>
-      <h1>Air<b>Spot</b><span>X</span></h1>
-      <div class="sub">Une carte, un vent — plané, longe & lagune.</div>
+      <h1>Air<span class="s">Spot</span><span class="x">X</span></h1>
+      <div class="sub">Une carte, un vent — GlideX · AirsurfX · LagoonX.</div>
     </header>
 
     <section>
@@ -154,16 +166,22 @@
 
     <section>
       <div id="modeTabs">
-        <button data-mode="glide">Plané</button>
-        <button data-mode="longe">Longe</button>
-        <button data-mode="lagune">Lagune</button>
+        <button data-mode="glide">GlideX</button>
+        <button data-mode="longe">AirsurfX</button>
+        <button data-mode="lagoon">LagoonX</button>
       </div>
+      <div id="layers" style="margin-top:8px">
+        <label class="inline"><input type="checkbox" id="layGlide"> GlideX</label>
+        <label class="inline"><input type="checkbox" id="layLonge"> AirsurfX</label>
+        <label class="inline"><input type="checkbox" id="layLagoon"> LagoonX</label>
+      </div>
+      <div class="sub" style="margin-top:2px">Calques : coche pour superposer, l'onglet choisit lequel s'édite.</div>
     </section>
 
     <section>
       <h2>Vent <span id="windWarn" class="msg err" style="text-transform:none;letter-spacing:0"></span></h2>
       <div id="windWrap">
-        <svg id="compass" width="120" height="120" viewBox="0 0 120 120" aria-label="Direction du vent"></svg>
+        <svg id="compass" width="118" height="118" viewBox="0 0 118 118" aria-label="Direction du vent"></svg>
         <div id="windReadout">
           <div class="big" id="windBig">—</div>
           <div class="msg">d'où vient le vent</div>
@@ -175,14 +193,11 @@
       </div>
     </section>
 
-    <!-- ============ MODE PLANÉ ============ -->
+    <!-- ============ GLIDEX ============ -->
     <div id="mGlide">
       <section>
         <h2>Voile</h2>
-        <div class="row">
-          <select id="wingSel"></select>
-          <select id="sizeSel"></select>
-        </div>
+        <div class="row"><select id="wingSel"></select><select id="sizeSel"></select></div>
         <label class="fld">Vitesse best glide <span><input id="gVx" type="number" min="10" max="90" step="1"> <span class="unit">km/h</span></span></label>
         <label class="fld">Finesse best (contour) <span><input id="gFbest" type="number" min="2" max="14" step="0.1"></span></label>
         <label class="fld">Finesse prudente (sûr) <span><input id="gFplan" type="number" min="2" max="14" step="0.1"></span></label>
@@ -200,18 +215,14 @@
         <div class="kv"><span class="k">Compo. vent</span><span class="v" id="gComp">—</span></div>
         <div class="kv"><span class="k">Δh best / prudente</span><span class="v" id="gDrop">—</span></div>
         <div class="kv"><span class="k">Clearance arrivée</span><span class="v" id="gClear">—</span></div>
-        <div class="kv"><span class="k">Temps de vol</span><span class="v" id="gTime">—</span></div>
-        <div class="kv"><span class="k">Vitesse sol</span><span class="v" id="gGs">—</span></div>
+        <div class="kv"><span class="k">Temps / vitesse sol</span><span class="v" id="gTime">—</span></div>
         <div class="verdict" id="gVerdict" style="display:none"></div>
       </section>
     </div>
 
-    <!-- ============ MODE LONGE ============ -->
+    <!-- ============ AIRSURFX ============ -->
     <div id="mLonge">
-      <section>
-        <h2>Cordes</h2>
-        <div id="spotList"></div>
-      </section>
+      <section><h2>Cordes</h2><div id="spotList"></div></section>
       <section>
         <h2>Corde sélectionnée</h2>
         <div class="row">
@@ -223,13 +234,31 @@
       </section>
     </div>
 
-    <!-- ============ MODE LAGUNE ============ -->
-    <div id="mLagune">
+    <!-- ============ LAGOONX ============ -->
+    <div id="mLagoon">
       <section>
-        <h2>Marée & profondeur de lagune</h2>
-        <p class="msg">Le mode Lagune calcule, sur le relief LiDAR réel, <b>quand une lagune se met en eau et avec quelle profondeur</b> selon la marée. Son moteur (relief fin + remplissage hydraulique) est encore hébergé dans LagoonX ; son intégration native à AirSpotX arrive.</p>
-        <div class="row"><button id="openLagoon" class="primary">Ouvrir LagoonX ↗</button></div>
+        <h2>Marée & profondeur</h2>
+        <div id="demMsg" class="msg">Clique un point (Espagne / France) pour charger le relief LiDAR et la marée.</div>
+        <div class="kv" style="margin-top:4px"><span class="k">Niveau mer</span><span class="v" id="seaNow">—</span></div>
+        <div class="kv"><span class="k">Coef. estimé</span><span class="v" id="coefNow">—</span></div>
       </section>
+      <section>
+        <h2>Prochaines marées</h2>
+        <div id="tideList"><div class="msg">—</div></div>
+      </section>
+      <section>
+        <h2>Point sondé</h2>
+        <div class="kv"><span class="k">Altitude sol</span><span class="v" id="ptAlt">—</span></div>
+        <div class="kv"><span class="k">Seuil hydraulique</span><span class="v" id="ptThr">—</span></div>
+        <div class="kv"><span class="k">Profondeur (curseur)</span><span class="v" id="ptDepth">—</span></div>
+      </section>
+      <details>
+        <summary>Calibration</summary>
+        <label class="fld">Décalage niveau <span><input id="calOffset" type="number" step="5" value="0"> <span class="unit">cm</span></span></label>
+        <label class="fld">Décalage horaire marée <span><input id="tideShift" type="number" step="5" value="0"> <span class="unit">min</span></span></label>
+        <label class="fld">Retard lagune <span><input id="calDelay" type="number" step="5" value="0"> <span class="unit">min</span></span></label>
+        <label class="inline" style="margin-top:6px"><input type="checkbox" id="chkRetention"> Rétention (eau piégée à marée descendante)</label>
+      </details>
     </div>
 
     <section>
@@ -239,23 +268,112 @@
 
     <details>
       <summary>Aide</summary>
-      <p><b>Vent</b> partagé par tous les modes : cadran (glisser) ou saisie ° + force (kt).</p>
-      <p><b>Plané</b> : clique pour poser <b>départ</b> puis <b>arrivée</b> (déplaçables). L'empreinte cyan = zone atteignable (surface = finesse prudente, contour = best glide), décalée sous le vent. Verdict ✓/⚠/✕ selon la marge.</p>
-      <p><b>Longe</b> : chaque clic pose une corde ; demi-cercle sous le vent = fenêtre de vol. ✎ pour renommer, poignée orange pour régler longueur + vent.</p>
+      <p><b>Vent</b> partagé par tous les calques : cadran (glisser) ou saisie ° + force (kt).</p>
+      <p><b>Onglets</b> = calque édité (reçoit les clics). <b>Cases Calques</b> = superposition : coche plusieurs calques pour, p.ex., voir l'eau <i>LagoonX</i> sous la fenêtre <i>AirsurfX</i>.</p>
+      <p><b>GlideX</b> : pose départ puis arrivée ; empreinte atteignable décalée sous le vent, verdict ✓/⚠/✕.</p>
+      <p><b>AirsurfX</b> : chaque clic pose une corde ; demi-cercle sous le vent = fenêtre de vol.</p>
+      <p><b>LagoonX</b> : clique un point → relief LiDAR + marée ; la barre du bas fait varier le temps, l'eau se remplit/vide.</p>
     </details>
 
-    <div class="msg">AirSpotX · satellite Esri · <a href="https://github.com/XavierKain/airspotx" style="color:var(--muted)">source</a></div>
+    <div class="msg">AirSpotX · satellite Esri · relief IGN ES/FR · marée Open-Meteo · <a href="https://github.com/XavierKain/airspotx" style="color:var(--muted)">source</a></div>
   </div>
 
-  <div id="map"></div>
-  <div id="hint"></div>
+  <div id="map">
+    <div id="hint"></div>
+    <div id="legend"></div>
+  </div>
+  </div>
+
+  <div id="timebar">
+    <div id="timerow">
+      <button id="btnNow" title="Revenir à maintenant">Maintenant</button>
+      <button id="btnMinus" class="tnudge" title="−15 min">−15</button>
+      <span id="timelabel">—</span>
+      <button id="btnPlus" class="tnudge" title="+15 min">+15</button>
+      <button id="btnPlay" title="Animer">▶</button>
+      <input type="range" id="timeSlider" min="0" max="100" step="1" value="50">
+    </div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- ===== MODÈLE LagoonX (repris verbatim, fonctions pures) ===== -->
+<script id="model">
+'use strict';
+function parseASC(text){
+  const start=text.indexOf('ncols'); if(start<0) throw new Error('ASC invalide');
+  let body=text.slice(start); const endMark=body.indexOf('--wcs'); if(endMark>0) body=body.slice(0,endMark);
+  const tok=body.split(/\s+/).filter(s=>s.length); const hdr={}; let i=0;
+  while(i<tok.length && isNaN(parseFloat(tok[i]))){ hdr[tok[i].toLowerCase()]=parseFloat(tok[i+1]); i+=2; }
+  const ncols=hdr.ncols|0, nrows=hdr.nrows|0;
+  const dx=hdr.dx!==undefined?hdr.dx:hdr.cellsize, dy=hdr.dy!==undefined?hdr.dy:hdr.cellsize;
+  const xll=hdr.xllcorner!==undefined?hdr.xllcorner:hdr.xllcenter-dx/2;
+  const yll=hdr.yllcorner!==undefined?hdr.yllcorner:hdr.yllcenter-dy/2;
+  const nodata=hdr.nodata_value!==undefined?hdr.nodata_value:-9999; const n=ncols*nrows;
+  if(tok.length-i<n) throw new Error('ASC tronqué');
+  const data=new Float32Array(n);
+  for(let k=0;k<n;k++){ const v=parseFloat(tok[i+k]); data[k]=(v===nodata||!isFinite(v))?-3:v; }
+  return {ncols,nrows,xll,yll,dx,dy,nodata,data};
+}
+function priorityFlood(H,ncols,nrows){
+  const n=ncols*nrows, thr=new Float32Array(n).fill(Infinity), done=new Uint8Array(n);
+  const hp=new Float64Array(n*4), hi=new Int32Array(n*4); let hn=0;
+  function push(p,idx){ let c=hn++; hp[c]=p; hi[c]=idx;
+    while(c>0){ const par=(c-1)>>1; if(hp[par]<=hp[c])break; const tp=hp[par];hp[par]=hp[c];hp[c]=tp; const ti=hi[par];hi[par]=hi[c];hi[c]=ti; c=par; } }
+  function pop(){ const p=hp[0],idx=hi[0]; hn--;
+    if(hn>0){ hp[0]=hp[hn];hi[0]=hi[hn]; let c=0;
+      for(;;){ let l=2*c+1,r=l+1,m=c; if(l<hn&&hp[l]<hp[m])m=l; if(r<hn&&hp[r]<hp[m])m=r; if(m===c)break;
+        const tp=hp[m];hp[m]=hp[c];hp[c]=tp; const ti=hi[m];hi[m]=hi[c];hi[c]=ti; c=m; } }
+    return [p,idx]; }
+  for(let c=0;c<ncols;c++) for(const r of [0,nrows-1]){ const i=r*ncols+c; if(thr[i]===Infinity){thr[i]=H[i];push(H[i],i);} }
+  for(let r=0;r<nrows;r++) for(const c of [0,ncols-1]){ const i=r*ncols+c; if(thr[i]===Infinity){thr[i]=H[i];push(H[i],i);} }
+  while(hn>0){ const [p,i]=pop(); if(done[i])continue; done[i]=1; const r=(i/ncols)|0,c=i%ncols;
+    if(c>0){const j=i-1,cand=Math.max(H[j],p); if(cand<thr[j]){thr[j]=cand;push(cand,j);}}
+    if(c<ncols-1){const j=i+1,cand=Math.max(H[j],p); if(cand<thr[j]){thr[j]=cand;push(cand,j);}}
+    if(r>0){const j=i-ncols,cand=Math.max(H[j],p); if(cand<thr[j]){thr[j]=cand;push(cand,j);}}
+    if(r<nrows-1){const j=i+ncols,cand=Math.max(H[j],p); if(cand<thr[j]){thr[j]=cand;push(cand,j);}} }
+  return thr;
+}
+function findExtrema(epochs,values){
+  const out=[];
+  for(let i=1;i<values.length-1;i++){ const a=values[i-1],b=values[i],c=values[i+1];
+    const hi=(b>=a&&b>c)||(b>a&&b>=c), lo=(b<=a&&b<c)||(b<a&&b<=c); if(!hi&&!lo)continue;
+    const denom=a-2*b+c; let dt=0,h=b;
+    if(Math.abs(denom)>1e-9){ dt=0.5*(a-c)/denom; dt=Math.max(-1,Math.min(1,dt)); h=b-0.25*(a-c)*dt; }
+    out.push({type:hi?'PM':'BM', epoch:epochs[i]+(epochs[i+1]-epochs[i])*dt, h}); }
+  return out.filter((e,k)=>k===0||e.type!==out[k-1].type||Math.abs(e.epoch-out[k-1].epoch)>3*3600e3);
+}
+function computeCoefs(events){
+  const amps=[];
+  for(let i=0;i<events.length;i++){ if(events[i].type!=='PM')continue; const prev=events[i-1],next=events[i+1],parts=[];
+    if(prev&&prev.type==='BM')parts.push((events[i].h-prev.h)/2); if(next&&next.type==='BM')parts.push((events[i].h-next.h)/2);
+    if(parts.length)amps.push({i,a:parts.reduce((s,x)=>s+x,0)/parts.length}); }
+  if(!amps.length)return; const mean=amps.reduce((s,x)=>s+x.a,0)/amps.length, U=mean/0.70;
+  for(const {i,a} of amps) events[i].coef=Math.max(20,Math.min(120,Math.round(100*a/U)));
+}
+function makeLevelFn(epochs,values){
+  const n=values.length, slope=new Float64Array(n);
+  for(let i=1;i<n-1;i++) slope[i]=(values[i+1]-values[i-1])/(epochs[i+1]-epochs[i-1]);
+  slope[0]=(values[1]-values[0])/(epochs[1]-epochs[0]); slope[n-1]=(values[n-1]-values[n-2])/(epochs[n-1]-epochs[n-2]);
+  return function(t){ if(t<=epochs[0])return values[0]; if(t>=epochs[n-1])return values[n-1];
+    let lo=0,hi=n-1; while(hi-lo>1){const m=(lo+hi)>>1; if(epochs[m]<=t)lo=m; else hi=m;}
+    const h=epochs[hi]-epochs[lo],u=(t-epochs[lo])/h,u2=u*u,u3=u2*u;
+    return (2*u3-3*u2+1)*values[lo]+(u3-2*u2+u)*h*slope[lo]+(-2*u3+3*u2)*values[hi]+(u3-u2)*h*slope[hi]; };
+}
+function makeRollingMaxFn(levelFn,t0,t1,hours){
+  const step=5*60e3,n=Math.ceil((t1-t0)/step)+1,Lv=new Float64Array(n);
+  for(let i=0;i<n;i++)Lv[i]=levelFn(t0+i*step);
+  const w=Math.round(hours*3600e3/step),rmax=new Float64Array(n),dq=new Int32Array(n); let head=0,tail=0;
+  for(let i=0;i<n;i++){ while(tail>head&&Lv[dq[tail-1]]<=Lv[i])tail--; dq[tail++]=i; while(dq[head]<i-w)head++; rmax[i]=Lv[dq[head]]; }
+  return function(t){ const i=Math.max(0,Math.min(n-1,Math.round((t-t0)/step))); return rmax[i]; };
+}
+</script>
+
 <script>
 'use strict';
 
-/* ============ voiles (extrait de GlideX/data/wings.json) ============ */
+/* ===== voiles (GlideX) ===== */
 const WINGS = {
   flare_bandit:    { name:'Flare Bandit',     sizes:{ '10':{f:7.0,v:46},'13':{f:7.5,v:45},'16':{f:8.0,v:50},'19':{f:8.3,v:43},'22':{f:8.5,v:42} } },
   flare_moustache2:{ name:'Flare Moustache 2', sizes:{ '13':{f:6.5,v:45},'15':{f:6.8,v:44},'18':{f:7.2,v:43},'22':{f:7.6,v:41},'26':{f:7.9,v:39} } },
@@ -264,416 +382,403 @@ const WINGS = {
   custom:          { name:'Personnalisé', sizes:{ '—':{f:8.0,v:44} } }
 };
 
-/* ============ état ============ */
-const LS_KEY = 'airspotx-v1';
-const state = {
-  view: null,
-  wind: { dir: 270, kt: 15 },
-  mode: 'glide',
-  longe: { ropes: [], sel: -1 },
-  glide: { from:null, to:null, wingKey:'flare_bandit', wingSize:'16', vx:50, fBest:8, fPlan:6, dh:200, margin:20 }
+/* ===== état ===== */
+const LS_KEY='airspotx-v2';
+const state={
+  view:null, wind:{dir:270,kt:15}, mode:'glide',
+  layers:{glide:true,longe:false,lagoon:false},
+  glide:{from:null,to:null,wingKey:'flare_bandit',wingSize:'16',vx:50,fBest:8,fPlan:6,dh:200,margin:20},
+  longe:{ropes:[],sel:-1},
+  lagoon:{off:0,shift:0,lag:0,retention:false,center:null}
 };
-
 function loadState(){
-  const h = new URLSearchParams(location.hash.slice(1));
-  if (h.get('s')){
-    try { const d = JSON.parse(decodeURIComponent(h.get('s')));
-      if (d && typeof d === 'object'){ deepAssign(state, d); return true; } } catch(e){}
-  }
-  try { const d = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-    if (d && typeof d === 'object') deepAssign(state, d); } catch(e){}
+  const h=new URLSearchParams(location.hash.slice(1));
+  if(h.get('s')){ try{ const d=JSON.parse(decodeURIComponent(h.get('s'))); if(d&&typeof d==='object'){deepAssign(state,d);return true;} }catch(e){} }
+  try{ const d=JSON.parse(localStorage.getItem(LS_KEY)||'null'); if(d&&typeof d==='object')deepAssign(state,d); }catch(e){}
   return false;
 }
-function deepAssign(dst, src){
-  for (const k in src){
-    if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k]) && dst[k] && typeof dst[k] === 'object')
-      deepAssign(dst[k], src[k]);
-    else dst[k] = src[k];
-  }
-}
-const fromShare = loadState();
+function deepAssign(dst,src){ for(const k in src){
+  if(src[k]&&typeof src[k]==='object'&&!Array.isArray(src[k])&&dst[k]&&typeof dst[k]==='object')deepAssign(dst[k],src[k]);
+  else dst[k]=src[k]; } }
+const fromShare=loadState();
+function shareState(){ const d={wind:state.wind,mode:state.mode,view:state.view,layers:state.layers,glide:state.glide,longe:state.longe,
+  lagoon:{off:state.lagoon.off,shift:state.lagoon.shift,lag:state.lagoon.lag,retention:state.lagoon.retention,center:state.lagoon.center}};
+  return '#s='+encodeURIComponent(JSON.stringify(d)); }
+let saveT=null;
+function persist(){ try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}
+  clearTimeout(saveT); saveT=setTimeout(()=>history.replaceState(null,'',location.pathname+location.search+shareState()),120); }
 
-function shareState(){
-  const d = { wind:state.wind, mode:state.mode, view:state.view, longe:state.longe, glide:state.glide };
-  return '#s=' + encodeURIComponent(JSON.stringify(d));
-}
-function persist(){
-  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){}
-  history.replaceState(null, '', location.pathname + location.search + shareState());
-}
-
-/* ============ géométrie ============ */
-const R = 6371000, D2R = Math.PI/180, R2D = 180/Math.PI;
-const norm360 = d => ((d%360)+360)%360;
-const CARDS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
-const cardinal = deg => CARDS[Math.round(norm360(deg)/22.5) % 16];
-
-// sphérique (mode longe)
-function dest(lat, lng, brg, d){
-  const δ=d/R, θ=brg*D2R, φ1=lat*D2R, λ1=lng*D2R;
+/* ===== géométrie ===== */
+const R=6371000,D2R=Math.PI/180,R2D=180/Math.PI;
+const norm360=d=>((d%360)+360)%360;
+const CARDS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
+const cardinal=deg=>CARDS[Math.round(norm360(deg)/22.5)%16];
+function dest(lat,lng,brg,d){ const δ=d/R,θ=brg*D2R,φ1=lat*D2R,λ1=lng*D2R;
   const φ2=Math.asin(Math.sin(φ1)*Math.cos(δ)+Math.cos(φ1)*Math.sin(δ)*Math.cos(θ));
   const λ2=λ1+Math.atan2(Math.sin(θ)*Math.sin(δ)*Math.cos(φ1),Math.cos(δ)-Math.sin(φ1)*Math.sin(φ2));
-  return [φ2*R2D, λ2*R2D];
-}
-function distBearing(a, b){
-  const φ1=a.lat*D2R, φ2=b.lat*D2R, Δφ=(b.lat-a.lat)*D2R, Δλ=(b.lng-a.lng)*D2R;
-  const h=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-  const dist=2*R*Math.asin(Math.sqrt(h));
-  const y=Math.sin(Δλ)*Math.cos(φ2), x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
-  return { dist, brg:(Math.atan2(y,x)*R2D+360)%360 };
-}
-// ENU plate (mode plané) — précis à l'échelle km
-function enu(from, to){
-  return { dE:(to.lng-from.lng)*111320*Math.cos(from.lat*D2R), dN:(to.lat-from.lat)*111320 };
-}
-function offsetLL(from, dE, dN){
-  return [from.lat + dN/111320, from.lng + dE/(111320*Math.cos(from.lat*D2R))];
-}
-function windUnit(dir){ const t = norm360(dir+180)*D2R; return [Math.sin(t), Math.cos(t)]; } // vers où pousse le vent
+  return [φ2*R2D,λ2*R2D]; }
+function distBearing(a,b){ const φ1=a.lat*D2R,φ2=b.lat*D2R,Δφ=(b.lat-a.lat)*D2R,Δλ=(b.lng-a.lng)*D2R;
+  const h=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2, dist=2*R*Math.asin(Math.sqrt(h));
+  const y=Math.sin(Δλ)*Math.cos(φ2),x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return {dist,brg:(Math.atan2(y,x)*R2D+360)%360}; }
+function enu(from,to){ return {dE:(to.lng-from.lng)*111320*Math.cos(from.lat*D2R),dN:(to.lat-from.lat)*111320}; }
+function offsetLL(from,dE,dN){ return [from.lat+dN/111320,from.lng+dE/(111320*Math.cos(from.lat*D2R))]; }
+function windUnit(dir){ const t=norm360(dir+180)*D2R; return [Math.sin(t),Math.cos(t)]; }
+const fmtM=m=>m>=1000?(m/1000).toFixed(2).replace(/\.?0+$/,'').replace('.',',')+' km':Math.round(m)+' m';
+const fmtArea=m2=>m2>=10000?(m2/10000).toFixed(2).replace('.',',')+' ha':Math.round(m2).toLocaleString('fr-FR')+' m²';
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id);
 
-const fmtM = m => m>=1000 ? (m/1000).toFixed(2).replace(/\.?0+$/,'').replace('.',',')+' km' : Math.round(m)+' m';
-const fmtArea = m2 => m2>=10000 ? (m2/10000).toFixed(2).replace('.',',')+' ha' : Math.round(m2).toLocaleString('fr-FR')+' m²';
-const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-/* ============ carte ============ */
-const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagerie © Esri'});
-const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
-const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenTopoMap'});
-const map = L.map('map',{ center: state.view?[state.view.lat,state.view.lng]:[46.6,2.4],
-  zoom: state.view?state.view.zoom:6, layers:[sat], zoomControl:true });
+/* ===== carte ===== */
+const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagerie © Esri'});
+const osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
+const topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenTopoMap'});
+const map=L.map('map',{center:state.view?[state.view.lat,state.view.lng]:[46.6,2.4],zoom:state.view?state.view.zoom:6,layers:[sat],zoomControl:true});
 L.control.layers({'Satellite':sat,'Plan (OSM)':osm,'Topo':topo},null,{position:'topright'}).addTo(map);
 L.control.scale({imperial:false}).addTo(map);
-map.on('moveend',()=>{ const c=map.getCenter();
-  state.view={lat:+c.lat.toFixed(5),lng:+c.lng.toFixed(5),zoom:map.getZoom()}; persist(); });
+map.on('moveend',()=>{const c=map.getCenter();state.view={lat:+c.lat.toFixed(5),lng:+c.lng.toFixed(5),zoom:map.getZoom()};persist();});
+const glideLayer=L.layerGroup().addTo(map);
+const longeLayer=L.layerGroup().addTo(map);
 
-const glideLayer = L.layerGroup().addTo(map);
-const longeLayer = L.layerGroup().addTo(map);
-
-/* ============ vent partagé (compas) ============ */
-const compass = document.getElementById('compass');
-function drawCompass(){
-  const c=60, r=52, w=state.wind.dir;
-  const P=(deg,rad)=>({x:c+rad*Math.sin(deg*D2R),y:c-rad*Math.cos(deg*D2R)});
-  let ticks='';
+/* ===== vent partagé ===== */
+const compass=$('compass');
+function drawCompass(){ const c=59,r=51,w=state.wind.dir;
+  const P=(deg,rad)=>({x:c+rad*Math.sin(deg*D2R),y:c-rad*Math.cos(deg*D2R)}); let ticks='';
   for(let a=0;a<360;a+=30){const big=a%90===0,o=P(a,r),i=P(a,r-(big?9:5));
     ticks+=`<line x1="${o.x}" y1="${o.y}" x2="${i.x}" y2="${i.y}" stroke="${big?'#7f958d':'#42544d'}" stroke-width="${big?2:1}"/>`;}
-  const tail=P(w,r-12),tip=P(w+180,r-12), head=ang=>({x:tip.x+9*Math.sin(ang*D2R),y:tip.y-9*Math.cos(ang*D2R)});
+  const tail=P(w,r-12),tip=P(w+180,r-12),head=ang=>({x:tip.x+9*Math.sin(ang*D2R),y:tip.y-9*Math.cos(ang*D2R)});
   const a1=norm360(w+180),h1=head(a1+150),h2=head(a1-150);
   compass.innerHTML=`<circle cx="${c}" cy="${c}" r="${r}" fill="#0e1a16" stroke="#1e332d" stroke-width="2"/>`+ticks+
-    `<text x="${c}" y="${c-r+20}" text-anchor="middle" class="card-n">N</text>`+
-    `<text x="${c+r-19}" y="${c+4}" text-anchor="middle">E</text>`+
-    `<text x="${c}" y="${c+r-13}" text-anchor="middle">S</text>`+
-    `<text x="${c-r+19}" y="${c+4}" text-anchor="middle">O</text>`+
+    `<text x="${c}" y="${c-r+20}" text-anchor="middle" class="card-n">N</text><text x="${c+r-18}" y="${c+4}" text-anchor="middle">E</text>`+
+    `<text x="${c}" y="${c+r-13}" text-anchor="middle">S</text><text x="${c-r+18}" y="${c+4}" text-anchor="middle">O</text>`+
     `<line x1="${tail.x}" y1="${tail.y}" x2="${tip.x}" y2="${tip.y}" stroke="#f2a23d" stroke-width="3" stroke-linecap="round"/>`+
     `<polyline points="${h1.x},${h1.y} ${tip.x},${tip.y} ${h2.x},${h2.y}" fill="none" stroke="#f2a23d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`+
-    `<circle cx="${tail.x}" cy="${tail.y}" r="4" fill="#f2a23d"/>`;
-}
-function setWind(dir, kt){
-  if (dir!=null) state.wind.dir = norm360(Math.round(dir));
-  if (kt!=null) state.wind.kt = Math.max(0, Math.round(kt));
-  document.getElementById('windDir').value = state.wind.dir;
-  document.getElementById('windKt').value = state.wind.kt;
-  document.getElementById('windBig').textContent = state.wind.dir+'° · '+cardinal(state.wind.dir)+' · '+state.wind.kt+' kt';
-  drawCompass(); redrawActive();
-}
+    `<circle cx="${tail.x}" cy="${tail.y}" r="4" fill="#f2a23d"/>`; }
+function setWind(dir,kt){
+  if(dir!=null)state.wind.dir=norm360(Math.round(dir));
+  if(kt!=null)state.wind.kt=Math.max(0,Math.round(kt));
+  $('windDir').value=state.wind.dir; $('windKt').value=state.wind.kt;
+  $('windBig').textContent=state.wind.dir+'° · '+cardinal(state.wind.dir)+' · '+state.wind.kt+' kt';
+  drawCompass(); redrawVisible(); }
 let compassDrag=false;
-function compassPick(ev){
-  const rect=compass.getBoundingClientRect();
-  const x=ev.clientX-rect.left-rect.width/2, y=ev.clientY-rect.top-rect.height/2;
-  if(x===0&&y===0)return;
-  setWind(norm360(Math.atan2(x,-y)*R2D), null);
-}
+function compassPick(ev){ const rect=compass.getBoundingClientRect();
+  const x=ev.clientX-rect.left-rect.width/2,y=ev.clientY-rect.top-rect.height/2; if(x===0&&y===0)return;
+  setWind(norm360(Math.atan2(x,-y)*R2D),null); }
 compass.addEventListener('pointerdown',ev=>{compassDrag=true;compass.setPointerCapture(ev.pointerId);compassPick(ev);});
 compass.addEventListener('pointermove',ev=>{if(compassDrag)compassPick(ev);});
 compass.addEventListener('pointerup',()=>{compassDrag=false;persist();});
-document.getElementById('windDir').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(v,null);persist();}});
-document.getElementById('windKt').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(null,v);persist();}});
+$('windDir').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(v,null);persist();}});
+$('windKt').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(null,v);persist();}});
 
-/* ============ MODE PLANÉ ============ */
-const g = state.glide;
-let gFrom=null, gTo=null; // markers
-const ptIcon = (color,letter)=>L.divIcon({className:'pt-icon',iconSize:[26,26],iconAnchor:[13,13],
+/* ===================== GLIDEX ===================== */
+const g=state.glide; let gFrom=null,gTo=null;
+const ptIcon=(color,letter)=>L.divIcon({className:'pt-icon',iconSize:[26,26],iconAnchor:[13,13],
   html:`<svg width="26" height="26"><circle cx="13" cy="13" r="11" fill="#12201c" stroke="${color}" stroke-width="2"/><text x="13" y="17" text-anchor="middle" fill="${color}" font-size="12" font-weight="700">${letter}</text></svg>`});
-
-function fillWingSelectors(){
-  const ws=document.getElementById('wingSel'), ss=document.getElementById('sizeSel');
+function fillWingSelectors(){ const ws=$('wingSel'),ss=$('sizeSel');
   ws.innerHTML=''; Object.keys(WINGS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=WINGS[k].name;ws.appendChild(o);});
-  ws.value=g.wingKey;
-  ss.innerHTML=''; Object.keys(WINGS[g.wingKey].sizes).forEach(sz=>{const o=document.createElement('option');o.value=sz;o.textContent=sz;ss.appendChild(o);});
-  if(!(g.wingSize in WINGS[g.wingKey].sizes)) g.wingSize=Object.keys(WINGS[g.wingKey].sizes)[0];
-  ss.value=g.wingSize;
-}
-function applyWing(){
-  const w=WINGS[g.wingKey].sizes[g.wingSize];
+  ws.value=g.wingKey; ss.innerHTML='';
+  Object.keys(WINGS[g.wingKey].sizes).forEach(sz=>{const o=document.createElement('option');o.value=sz;o.textContent=sz;ss.appendChild(o);});
+  if(!(g.wingSize in WINGS[g.wingKey].sizes))g.wingSize=Object.keys(WINGS[g.wingKey].sizes)[0]; ss.value=g.wingSize; }
+function applyWing(){ const w=WINGS[g.wingKey].sizes[g.wingSize];
   g.vx=w.v; g.fBest=w.f; g.fPlan=Math.max(2,Math.round(w.f*0.8*10)/10);
-  document.getElementById('gVx').value=g.vx;
-  document.getElementById('gFbest').value=g.fBest;
-  document.getElementById('gFplan').value=g.fPlan;
-}
-function glideK(){
-  const Vx=g.vx/3.6, W=state.wind.kt*0.514444;
-  return { k:Math.min(0.985, Vx>0?W/Vx:0.985), Vx, W, over: W>=Vx };
-}
-function footprintPoly(from, R0, k, u){
-  const cx=R0*k*u[0], cy=R0*k*u[1], pts=[];
-  for(let a=0;a<360;a+=5) pts.push(offsetLL(from, cx+R0*Math.sin(a*D2R), cy+R0*Math.cos(a*D2R)));
-  return pts;
-}
-function glideRedraw(){
+  $('gVx').value=g.vx; $('gFbest').value=g.fBest; $('gFplan').value=g.fPlan; }
+function glideK(){ const Vx=g.vx/3.6,W=state.wind.kt*0.514444; return {k:Math.min(0.985,Vx>0?W/Vx:0.985),Vx,W,over:W>=Vx}; }
+function footprintPoly(from,R0,k,u){ const cx=R0*k*u[0],cy=R0*k*u[1],pts=[];
+  for(let a=0;a<360;a+=5)pts.push(offsetLL(from,cx+R0*Math.sin(a*D2R),cy+R0*Math.cos(a*D2R))); return pts; }
+function drawGlide(){
   glideLayer.clearLayers();
-  const hint=document.getElementById('hint');
-  if(state.mode==='glide') hint.style.display = g.to ? 'none' : '';
-  if(!g.from){ if(gFrom){map.removeLayer(gFrom);gFrom=null;} if(gTo){map.removeLayer(gTo);gTo=null;} glideReadouts(null); return; }
-
-  const {k,Vx,W,over}=glideK(), u=windUnit(state.wind.dir);
-  document.getElementById('windWarn').textContent = over ? '⚠ vent ≥ vitesse air : plané face au vent impossible' : '';
-
-  // empreinte autour du départ
-  const dh=Math.max(0,g.dh), R0b=g.fBest*dh, R0p=g.fPlan*dh;
-  L.polygon(footprintPoly(g.from,R0p,k,u),{color:'#43ccd6',weight:1.5,opacity:.6,fillColor:'#43ccd6',fillOpacity:.18,interactive:false}).addTo(glideLayer);
+  const focused=state.mode==='glide';
+  if(!state.layers.glide||!g.from){ if(gFrom){map.removeLayer(gFrom);gFrom=null;} if(gTo){map.removeLayer(gTo);gTo=null;} if(focused)glideReadouts(null); return; }
+  const {k,Vx,W,over}=glideK(),u=windUnit(state.wind.dir);
+  if(focused)$('windWarn').textContent=over?'⚠ vent ≥ vitesse air':'';
+  const dh=Math.max(0,g.dh),R0b=g.fBest*dh,R0p=g.fPlan*dh;
+  L.polygon(footprintPoly(g.from,R0p,k,u),{color:'#43ccd6',weight:1.5,opacity:.6,fillColor:'#43ccd6',fillOpacity:.16,interactive:false}).addTo(glideLayer);
   L.polygon(footprintPoly(g.from,R0b,k,u),{color:'#e9efeb',weight:1.2,opacity:.5,dashArray:'6 7',fill:false,interactive:false}).addTo(glideLayer);
-  // flèche vent
-  const at=dest(g.from.lat,g.from.lng,state.wind.dir,R0b*1.28||120), ap=dest(g.from.lat,g.from.lng,state.wind.dir,R0b*1.05||90);
+  const at=dest(g.from.lat,g.from.lng,state.wind.dir,R0b*1.28||120),ap=dest(g.from.lat,g.from.lng,state.wind.dir,R0b*1.05||90);
   L.polyline([at,ap],{color:'#f2a23d',weight:3,opacity:.9,interactive:false}).addTo(glideLayer);
-
-  // marqueurs
-  if(!gFrom){ gFrom=L.marker([g.from.lat,g.from.lng],{icon:ptIcon('#43ccd6','D'),draggable:true}).addTo(map);
-    gFrom.on('drag',e=>{const p=e.target.getLatLng();g.from={lat:+p.lat.toFixed(6),lng:+p.lng.toFixed(6)};glideRedraw();});
-    gFrom.on('dragend',persist);
-  } else gFrom.setLatLng([g.from.lat,g.from.lng]);
-
+  // marqueurs seulement si édité
+  if(focused){
+    if(!gFrom){ gFrom=L.marker([g.from.lat,g.from.lng],{icon:ptIcon('#43ccd6','D'),draggable:true}).addTo(map);
+      gFrom.on('drag',e=>{const p=e.target.getLatLng();g.from={lat:+p.lat.toFixed(6),lng:+p.lng.toFixed(6)};drawGlide();}); gFrom.on('dragend',persist);
+    } else gFrom.setLatLng([g.from.lat,g.from.lng]);
+  } else if(gFrom){ map.removeLayer(gFrom); gFrom=null; }
   if(g.to){
-    if(!gTo){ gTo=L.marker([g.to.lat,g.to.lng],{icon:ptIcon('#f2a23d','A'),draggable:true}).addTo(map);
-      gTo.on('drag',e=>{const p=e.target.getLatLng();g.to={lat:+p.lat.toFixed(6),lng:+p.lng.toFixed(6)};glideRedraw();});
-      gTo.on('dragend',persist);
-    } else gTo.setLatLng([g.to.lat,g.to.lng]);
     L.polyline([[g.from.lat,g.from.lng],[g.to.lat,g.to.lng]],{color:'#f2a23d',weight:2,opacity:.85,dashArray:'4 5',interactive:false}).addTo(glideLayer);
-    glideReadouts(computeLeg(k,Vx,W,u));
-  } else { if(gTo){map.removeLayer(gTo);gTo=null;} glideReadouts(null); }
+    if(focused){
+      if(!gTo){ gTo=L.marker([g.to.lat,g.to.lng],{icon:ptIcon('#f2a23d','A'),draggable:true}).addTo(map);
+        gTo.on('drag',e=>{const p=e.target.getLatLng();g.to={lat:+p.lat.toFixed(6),lng:+p.lng.toFixed(6)};drawGlide();}); gTo.on('dragend',persist);
+      } else gTo.setLatLng([g.to.lat,g.to.lng]);
+    } else if(gTo){ map.removeLayer(gTo); gTo=null; }
+    if(focused)glideReadouts(computeLeg(k,Vx,W,u));
+  } else { if(gTo){map.removeLayer(gTo);gTo=null;} if(focused)glideReadouts(null); }
 }
-function computeLeg(k,Vx,W,u){
-  const {dE,dN}=enu(g.from,g.to), pu=dE*u[0]+dN*u[1], D=Math.hypot(dE,dN), k2=k*k;
+function computeLeg(k,Vx,W,u){ const {dE,dN}=enu(g.from,g.to),pu=dE*u[0]+dN*u[1],D=Math.hypot(dE,dN),k2=k*k;
   const R0=(Math.sqrt(k2*pu*pu+(1-k2)*D*D)-k*pu)/(1-k2);
-  const dhBest=R0/g.fBest, dhPlan=R0/g.fPlan, t=R0/Vx, gs=t>0?D/t:0;
-  const brg=distBearing(g.from,g.to).brg;
-  const clearBest=g.dh-dhBest, clearPlan=g.dh-dhPlan, comp=(D>0?pu/D:0)*W;
-  let verdict='no';
-  if(clearPlan>=g.margin) verdict='ok'; else if(clearBest>=g.margin) verdict='warn';
-  return {D,brg,R0,dhBest,dhPlan,t,gs,clearBest,clearPlan,comp,verdict};
-}
-function glideReadouts(r){
-  const set=(id,v)=>document.getElementById(id).textContent=v;
-  const vd=document.getElementById('gVerdict');
-  if(!r){ ['gDist','gBrg','gComp','gDrop','gClear','gTime','gGs'].forEach(id=>set(id,'—')); vd.style.display='none';
-    document.getElementById('mbRead').textContent='Plané · vent '+state.wind.dir+'° '+state.wind.kt+'kt'; return; }
+  const dhBest=R0/g.fBest,dhPlan=R0/g.fPlan,t=R0/Vx,gs=t>0?D/t:0,brg=distBearing(g.from,g.to).brg;
+  const clearBest=g.dh-dhBest,clearPlan=g.dh-dhPlan,comp=(D>0?pu/D:0)*W;
+  let verdict='no'; if(clearPlan>=g.margin)verdict='ok'; else if(clearBest>=g.margin)verdict='warn';
+  return {D,brg,R0,dhBest,dhPlan,t,gs,clearBest,clearPlan,comp,verdict}; }
+function glideReadouts(r){ const set=(id,v)=>$(id).textContent=v,vd=$('gVerdict');
+  if(!r){ ['gDist','gBrg','gComp','gDrop','gClear','gTime'].forEach(id=>set(id,'—')); vd.style.display='none';
+    if(state.mode==='glide')$('mbRead').textContent='GlideX · vent '+state.wind.dir+'° '+state.wind.kt+'kt'; return; }
   set('gDist',fmtM(r.D)); set('gBrg',Math.round(r.brg)+'° '+cardinal(r.brg));
   set('gComp',(r.comp>=0?'+':'')+r.comp.toFixed(1)+' m/s '+(r.comp>=0?'(arrière)':'(face)'));
-  set('gDrop',Math.round(r.dhBest)+' / '+Math.round(r.dhPlan)+' m');
-  set('gClear',Math.round(r.clearBest)+' / '+Math.round(r.clearPlan)+' m');
-  set('gTime',r.t.toFixed(0)+' s'); set('gGs',(r.gs*3.6).toFixed(0)+' km/h');
+  set('gDrop',Math.round(r.dhBest)+' / '+Math.round(r.dhPlan)+' m'); set('gClear',Math.round(r.clearBest)+' / '+Math.round(r.clearPlan)+' m');
+  set('gTime',r.t.toFixed(0)+' s · '+(r.gs*3.6).toFixed(0)+' km/h');
   vd.style.display=''; vd.className='verdict '+r.verdict;
-  vd.textContent = r.verdict==='ok'?'✓ Atteignable avec marge':r.verdict==='warn'?'⚠ Seulement au best glide':'✕ Hors de portée';
-  document.getElementById('mbRead').textContent='Plané · '+fmtM(r.D)+' · '+(r.verdict==='ok'?'✓':r.verdict==='warn'?'⚠':'✕');
-}
-// contrôles plané
-document.getElementById('wingSel').addEventListener('change',e=>{g.wingKey=e.target.value;fillWingSelectors();applyWing();glideRedraw();persist();});
-document.getElementById('sizeSel').addEventListener('change',e=>{g.wingSize=e.target.value;applyWing();glideRedraw();persist();});
-['gVx','gFbest','gFplan','gDh','gMargin'].forEach(id=>{
-  document.getElementById(id).addEventListener('input',e=>{
-    const v=+e.target.value; if(!Number.isFinite(v))return;
-    if(id==='gVx')g.vx=v; else if(id==='gFbest')g.fBest=v; else if(id==='gFplan')g.fPlan=v;
-    else if(id==='gDh')g.dh=v; else if(id==='gMargin')g.margin=v;
-    if(id!=='gVx'&&id!=='gFbest'&&id!=='gFplan'){} glideRedraw(); persist();
-  });
-});
-document.getElementById('gReset').addEventListener('click',()=>{g.from=null;g.to=null;glideRedraw();persist();});
+  vd.textContent=r.verdict==='ok'?'✓ Atteignable avec marge':r.verdict==='warn'?'⚠ Seulement au best glide':'✕ Hors de portée';
+  if(state.mode==='glide')$('mbRead').textContent='GlideX · '+fmtM(r.D)+' · '+(r.verdict==='ok'?'✓':r.verdict==='warn'?'⚠':'✕'); }
+$('wingSel').addEventListener('change',e=>{g.wingKey=e.target.value;fillWingSelectors();applyWing();drawGlide();persist();});
+$('sizeSel').addEventListener('change',e=>{g.wingSize=e.target.value;applyWing();drawGlide();persist();});
+['gVx','gFbest','gFplan','gDh','gMargin'].forEach(id=>$(id).addEventListener('input',e=>{const v=+e.target.value;if(!Number.isFinite(v))return;
+  if(id==='gVx')g.vx=v; else if(id==='gFbest')g.fBest=v; else if(id==='gFplan')g.fPlan=v; else if(id==='gDh')g.dh=v; else if(id==='gMargin')g.margin=v;
+  drawGlide();persist();}));
+$('gReset').addEventListener('click',()=>{g.from=null;g.to=null;drawGlide();persist();});
 
-/* ============ MODE LONGE ============ */
-const L_ = state.longe;
-let anchorMarkers=[], handleMarker=null;
+/* ===================== AIRSURFX ===================== */
+const L_=state.longe; let anchorMarkers=[],handleMarker=null;
 const anchorIcon=sel=>L.divIcon({className:'anchor-icon',iconSize:[26,26],iconAnchor:[13,13],
   html:`<svg width="26" height="26"><circle cx="13" cy="13" r="11" fill="#12201c" stroke="${sel?'#43ccd6':'#7f958d'}" stroke-width="2"/><circle cx="13" cy="13" r="3.2" fill="${sel?'#43ccd6':'#7f958d'}"/></svg>`});
 const handleIcon=L.divIcon({className:'handle-icon',iconSize:[20,20],iconAnchor:[10,10],
   html:'<svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#f2a23d" stroke="#0c1311" stroke-width="2"/></svg>'});
 const selRope=()=>L_.sel>=0?L_.ropes[L_.sel]:null;
 const ropeName=(p,i)=>p.name||'Corde '+(i+1);
-
-function longeRedraw(){
+function drawLonge(){
   longeLayer.clearLayers();
-  const hint=document.getElementById('hint');
-  if(state.mode==='longe') hint.style.display = L_.ropes.length ? 'none' : '';
+  const focused=state.mode==='longe';
+  if(!state.layers.longe){ anchorMarkers.forEach(m=>map.removeLayer(m));anchorMarkers=[]; if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} if(focused)longeReadouts(); return; }
   const down=norm360(state.wind.dir+180);
-  L_.ropes.forEach((p,i)=>{
-    const sel=i===L_.sel, circle=[], arc=[[p.lat,p.lng]];
-    for(let a=0;a<360;a+=4) circle.push(dest(p.lat,p.lng,a,p.rope));
-    for(let a=-90;a<=90;a+=3) arc.push(dest(p.lat,p.lng,down+a,p.rope));
+  L_.ropes.forEach((p,i)=>{ const sel=i===L_.sel,circle=[],arc=[[p.lat,p.lng]];
+    for(let a=0;a<360;a+=4)circle.push(dest(p.lat,p.lng,a,p.rope));
+    for(let a=-90;a<=90;a+=3)arc.push(dest(p.lat,p.lng,down+a,p.rope));
     L.polygon(circle,{color:'#e9efeb',weight:sel?1.2:1,opacity:sel?.55:.3,dashArray:'6 7',fill:false,interactive:false}).addTo(longeLayer);
     L.polygon(arc,{color:'#43ccd6',weight:sel?2:1.4,opacity:sel?.95:.55,fillColor:'#43ccd6',fillOpacity:sel?.22:.10,interactive:false}).addTo(longeLayer);
     const mid=dest(p.lat,p.lng,down,p.rope*0.52);
     L.marker(mid,{icon:L.divIcon({className:'rope-label'+(sel?'':' dim'),html:`<span>${p.name?`<small>${esc(p.name)}</small>`:''}${fmtM(p.rope)}</span>`,iconSize:[0,0]}),interactive:false,keyboard:false}).addTo(longeLayer);
   });
-  // flèche vent globale sur la corde sélectionnée
   const p=selRope();
-  if(p){
-    const tail=dest(p.lat,p.lng,state.wind.dir,p.rope*1.32),tip=dest(p.lat,p.lng,state.wind.dir,p.rope*1.06);
+  if(p&&focused){ const tail=dest(p.lat,p.lng,state.wind.dir,p.rope*1.32),tip=dest(p.lat,p.lng,state.wind.dir,p.rope*1.06);
     const hl=Math.max(p.rope*0.09,3),h1=dest(tip[0],tip[1],state.wind.dir+32,hl),h2=dest(tip[0],tip[1],state.wind.dir-32,hl);
     L.polyline([tail,tip],{color:'#f2a23d',weight:3,opacity:.95,interactive:false}).addTo(longeLayer);
-    L.polyline([h1,tip,h2],{color:'#f2a23d',weight:3,opacity:.95,interactive:false}).addTo(longeLayer);
-  }
-  positionHandle(); longeReadouts();
+    L.polyline([h1,tip,h2],{color:'#f2a23d',weight:3,opacity:.95,interactive:false}).addTo(longeLayer); }
+  if(focused){ renderMarkers(); positionHandle(); } else { anchorMarkers.forEach(m=>map.removeLayer(m));anchorMarkers=[]; if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} }
+  if(focused)longeReadouts();
 }
-function positionHandle(){
-  const p=selRope();
-  if(!p||state.mode!=='longe'){ if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} return; }
+function positionHandle(){ const p=selRope();
+  if(!p){ if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} return; }
   const hp=dest(p.lat,p.lng,norm360(state.wind.dir+180),p.rope);
-  if(!handleMarker){
-    handleMarker=L.marker(hp,{icon:handleIcon,draggable:true,zIndexOffset:800}).addTo(map);
-    handleMarker.on('drag',e=>{const p2=selRope();if(!p2)return;const q=e.target.getLatLng();
-      const {dist,brg}=distBearing(p2,{lat:q.lat,lng:q.lng});
-      p2.rope=Math.min(5000,Math.max(1,Math.round(dist)));
-      setWind(norm360(brg+180),null); syncRopeInputs(); longeRedraw(); renderSpotList();});
+  if(!handleMarker){ handleMarker=L.marker(hp,{icon:handleIcon,draggable:true,zIndexOffset:800}).addTo(map);
+    handleMarker.on('drag',e=>{const p2=selRope();if(!p2)return;const q=e.target.getLatLng();const {dist,brg}=distBearing(p2,{lat:q.lat,lng:q.lng});
+      p2.rope=Math.min(5000,Math.max(1,Math.round(dist)));setWind(norm360(brg+180),null);syncRopeInputs();drawLonge();renderSpotList();});
     handleMarker.on('dragend',persist);
-  } else handleMarker.setLatLng(hp);
-}
-function renderMarkers(){
-  anchorMarkers.forEach(m=>map.removeLayer(m)); anchorMarkers=[];
-  if(state.mode!=='longe')return;
-  anchorMarkers=L_.ropes.map((p,i)=>{
-    const m=L.marker([p.lat,p.lng],{icon:anchorIcon(i===L_.sel),draggable:true,title:`${ropeName(p,i)} — ${fmtM(p.rope)}`,zIndexOffset:i===L_.sel?700:400}).addTo(map);
-    m.on('click',()=>selectRope(i));
-    m.on('dragstart',()=>{if(L_.sel!==i)selectRope(i);});
-    m.on('drag',e=>{const q=e.target.getLatLng();p.lat=+q.lat.toFixed(6);p.lng=+q.lng.toFixed(6);longeRedraw();});
-    m.on('dragend',()=>{persist();renderSpotList();});
-    return m;
-  });
-}
-function selectRope(i){ L_.sel=i; renderMarkers(); longeRedraw(); renderSpotList(); syncRopeInputs(); persist(); }
-function addRope(lat,lng){
-  const prev=selRope()||L_.ropes[L_.ropes.length-1];
-  L_.ropes.push({lat:+lat.toFixed(6),lng:+lng.toFixed(6),rope:prev?prev.rope:300});
-  selectRope(L_.ropes.length-1);
-}
-function deleteRope(i){ L_.ropes.splice(i,1); if(L_.sel>=L_.ropes.length)L_.sel=L_.ropes.length-1;
-  renderMarkers(); longeRedraw(); renderSpotList(); syncRopeInputs(); persist(); }
-function longeReadouts(){
-  const p=selRope();
-  document.getElementById('lArea').textContent=p?fmtArea(Math.PI*p.rope*p.rope/2):'—';
-  document.getElementById('lWide').textContent=p?fmtM(p.rope*2):'—';
-  if(state.mode==='longe') document.getElementById('mbRead').textContent=p?ropeName(p,L_.sel)+' · '+fmtM(p.rope):'—';
-}
-const spotList=document.getElementById('spotList');
-function renderSpotList(){
-  spotList.innerHTML='';
+  } else handleMarker.setLatLng(hp); }
+function renderMarkers(){ anchorMarkers.forEach(m=>map.removeLayer(m));
+  anchorMarkers=L_.ropes.map((p,i)=>{ const m=L.marker([p.lat,p.lng],{icon:anchorIcon(i===L_.sel),draggable:true,title:`${ropeName(p,i)} — ${fmtM(p.rope)}`,zIndexOffset:i===L_.sel?700:400}).addTo(map);
+    m.on('click',()=>selectRope(i)); m.on('dragstart',()=>{if(L_.sel!==i)selectRope(i);});
+    m.on('drag',e=>{const q=e.target.getLatLng();p.lat=+q.lat.toFixed(6);p.lng=+q.lng.toFixed(6);drawLonge();});
+    m.on('dragend',()=>{persist();renderSpotList();}); return m; }); }
+function selectRope(i){ L_.sel=i; drawLonge(); renderSpotList(); syncRopeInputs(); persist(); }
+function addRope(lat,lng){ const prev=selRope()||L_.ropes[L_.ropes.length-1];
+  L_.ropes.push({lat:+lat.toFixed(6),lng:+lng.toFixed(6),rope:prev?prev.rope:300}); selectRope(L_.ropes.length-1); }
+function deleteRope(i){ L_.ropes.splice(i,1); if(L_.sel>=L_.ropes.length)L_.sel=L_.ropes.length-1; drawLonge(); renderSpotList(); syncRopeInputs(); persist(); }
+function longeReadouts(){ const p=selRope();
+  $('lArea').textContent=p?fmtArea(Math.PI*p.rope*p.rope/2):'—'; $('lWide').textContent=p?fmtM(p.rope*2):'—';
+  if(state.mode==='longe')$('mbRead').textContent=p?ropeName(p,L_.sel)+' · '+fmtM(p.rope):'AirsurfX'; }
+const spotList=$('spotList');
+function renderSpotList(){ spotList.innerHTML='';
   if(!L_.ropes.length){spotList.innerHTML='<div class="spot-empty">Cliquez sur la carte pour poser une corde.</div>';return;}
-  L_.ropes.forEach((p,i)=>{
-    const row=document.createElement('div');
-    row.className='spot-row'+(i===L_.sel?' sel':'');
-    row.innerHTML=`<span class="dot" style="background:${i===L_.sel?'#43ccd6':'#7f958d'}"></span>`+
-      `<span class="lbl">${esc(ropeName(p,i))} — ${fmtM(p.rope)}</span>`+
-      `<button class="edit" title="Renommer">✎</button><button class="del" title="Supprimer">✕</button>`;
-    row.addEventListener('click',e=>{
-      if(e.target.classList.contains('del')){deleteRope(i);return;}
-      if(e.target.classList.contains('edit')){renameRope(row,p,i);return;}
-      selectRope(i); map.panTo([p.lat,p.lng]);
-    });
-    row.addEventListener('dblclick',()=>renameRope(row,p,i));
-    spotList.appendChild(row);
-  });
-}
-function renameRope(row,p,i){
-  const lbl=row.querySelector('.lbl'); if(!lbl)return;
-  const input=document.createElement('input');
-  input.type='text'; input.className='rename'; input.maxLength=40; input.placeholder='Corde '+(i+1); input.value=p.name||'';
-  lbl.replaceWith(input); input.focus(); input.select();
-  let done=false;
-  const commit=()=>{if(done)return;done=true;const v=input.value.trim();if(v)p.name=v;else delete p.name;
-    renderSpotList();renderMarkers();longeRedraw();persist();};
+  L_.ropes.forEach((p,i)=>{ const row=document.createElement('div'); row.className='spot-row'+(i===L_.sel?' sel':'');
+    row.innerHTML=`<span class="dot" style="background:${i===L_.sel?'#43ccd6':'#7f958d'}"></span><span class="lbl">${esc(ropeName(p,i))} — ${fmtM(p.rope)}</span><button class="edit" title="Renommer">✎</button><button class="del" title="Supprimer">✕</button>`;
+    row.addEventListener('click',e=>{ if(e.target.classList.contains('del')){deleteRope(i);return;} if(e.target.classList.contains('edit')){renameRope(row,p,i);return;} selectRope(i);map.panTo([p.lat,p.lng]); });
+    row.addEventListener('dblclick',()=>renameRope(row,p,i)); spotList.appendChild(row); }); }
+function renameRope(row,p,i){ const lbl=row.querySelector('.lbl'); if(!lbl)return;
+  const input=document.createElement('input'); input.type='text';input.className='rename';input.maxLength=40;input.placeholder='Corde '+(i+1);input.value=p.name||'';
+  lbl.replaceWith(input); input.focus();input.select(); let done=false;
+  const commit=()=>{if(done)return;done=true;const v=input.value.trim();if(v)p.name=v;else delete p.name;renderSpotList();drawLonge();persist();};
   input.addEventListener('keydown',e=>{if(e.key==='Enter')commit();else if(e.key==='Escape'){done=true;renderSpotList();}});
-  input.addEventListener('blur',commit);
-  input.addEventListener('click',e=>e.stopPropagation());
-}
+  input.addEventListener('blur',commit); input.addEventListener('click',e=>e.stopPropagation()); }
 function syncRopeInputs(){ const p=selRope(); if(!p)return;
-  document.getElementById('ropeRange').value=Math.min(1000,Math.max(100,p.rope));
-  document.getElementById('ropeNum').value=p.rope;
-}
-document.getElementById('ropeRange').addEventListener('input',()=>{const p=selRope();if(!p)return;
-  p.rope=+document.getElementById('ropeRange').value;document.getElementById('ropeNum').value=p.rope;longeRedraw();renderSpotList();});
-document.getElementById('ropeRange').addEventListener('change',persist);
-document.getElementById('ropeNum').addEventListener('input',()=>{const p=selRope();if(!p)return;
-  const v=Math.round(+document.getElementById('ropeNum').value);if(Number.isFinite(v)&&v>=1){
-    p.rope=Math.min(5000,v);document.getElementById('ropeRange').value=Math.min(1000,Math.max(100,v));longeRedraw();renderSpotList();persist();}});
+  $('ropeRange').value=Math.min(1000,Math.max(100,p.rope)); $('ropeNum').value=p.rope; }
+$('ropeRange').addEventListener('input',()=>{const p=selRope();if(!p)return;p.rope=+$('ropeRange').value;$('ropeNum').value=p.rope;drawLonge();renderSpotList();});
+$('ropeRange').addEventListener('change',persist);
+$('ropeNum').addEventListener('input',()=>{const p=selRope();if(!p)return;const v=Math.round(+$('ropeNum').value);
+  if(Number.isFinite(v)&&v>=1){p.rope=Math.min(5000,v);$('ropeRange').value=Math.min(1000,Math.max(100,v));drawLonge();renderSpotList();persist();}});
 
-/* ============ modes ============ */
-const HINTS={ glide:'Cliquez pour poser le <b>départ</b>, puis l\'<b>arrivée</b>', longe:'Cliquez pour poser une <b>corde</b>', lagune:'' };
-function redrawActive(){ if(state.mode==='glide')glideRedraw(); else if(state.mode==='longe')longeRedraw(); }
-let mapClick=null;
+/* ===================== LAGOONX ===================== */
+const WCS='https://servicios.idee.es/wcs-inspire/mdt', WMS_FR='https://data.geopf.fr/wms-r/wms', MARINE='https://marine-api.open-meteo.com/v1/marine';
+const MAX_SPAN_LAT=0.030,MAX_SPAN_LON=0.036;
+const DEPTH_STOPS=[[0.05,[168,224,235,0.35]],[0.25,[110,192,220,0.50]],[0.50,[62,150,200,0.62]],[1.00,[30,100,170,0.72]],[2.00,[12,60,120,0.80]]];
+const JOURS=['dim','lun','mar','mer','jeu','ven','sam'],MOIS=['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
+const LG={ tide:null, dem:null, overlay:null, overlayCanvas:null, cursor:Date.now(), pt:null, ptMarker:null, playing:false, playTimer:null };
+const CanvasOverlay=L.ImageOverlay.extend({ _initImage(){ this._image=this._url; L.DomUtil.addClass(this._image,'leaflet-image-layer lagoon-overlay');
+  if(this._zoomAnimated)L.DomUtil.addClass(this._image,'leaflet-zoom-animated'); this._image.onselectstart=L.Util.falseFn; this._image.onmousemove=L.Util.falseFn; } });
+function vOffM(){ return (state.lagoon.off||0)/100; }
+function tShiftMs(){ return (state.lagoon.shift||0)*60e3; }
+function lagMs(){ return (state.lagoon.lag||0)*60e3; }
+function seaLevelAt(t){ return LG.tide.levelFn(t-tShiftMs())+vOffM(); }
+function lagoonLevelAt(t){ return LG.tide.levelFn(t-tShiftMs()-lagMs())+vOffM(); }
+function rollMaxAt(t){ return LG.tide.rollMaxFn(t-tShiftMs()-lagMs())+vOffM(); }
+function evEpoch(e){ return e.epoch+tShiftMs(); }
+function fmtT(t,withDay=true){ if(!LG.tide)return '—'; const d=new Date(t+LG.tide.utcOff*1000);
+  const hh=String(d.getUTCHours()).padStart(2,'0'),mm=String(d.getUTCMinutes()).padStart(2,'0');
+  return withDay?`${JOURS[d.getUTCDay()]} ${d.getUTCDate()} ${MOIS[d.getUTCMonth()]} ${hh}:${mm}`:`${hh}:${mm}`; }
+async function loadTides(lat,lon){
+  const url=`${MARINE}?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&hourly=sea_level_height_msl&past_days=14&forecast_days=8&timezone=auto`;
+  const d=await (await fetch(url)).json(); if(!d.hourly)throw new Error(d.reason||'marée invalide');
+  const utcOff=d.utc_offset_seconds, epochs=d.hourly.time.map(t=>Date.parse(t+'Z')-utcOff*1000), values=d.hourly.sea_level_height_msl.map(v=>v==null?0:v);
+  const events=findExtrema(epochs,values); computeCoefs(events); const levelFn=makeLevelFn(epochs,values);
+  const t0=epochs[0],t1=epochs[epochs.length-1],rollMaxFn=makeRollingMaxFn(levelFn,t0,t1,13);
+  LG.tide={epochs,values,events,levelFn,rollMaxFn,utcOff,t0,t1};
+  const slider=$('timeSlider'); slider.min=t0; slider.max=t1; slider.step=60e3;
+  setCursor(Math.max(t0,Math.min(t1,Date.now()))); renderTideList();
+}
+function renderTideList(){ if(!LG.tide)return; const now=Date.now();
+  const next=LG.tide.events.filter(e=>evEpoch(e)>=now-30*60e3).slice(0,5);
+  $('tideList').innerHTML=next.map(e=>`<div class="tide-ev"><span class="${e.type==='PM'?'pm':'bm'}">${e.type}</span><span class="t">${fmtT(evEpoch(e))}</span><span>${e.h>=0?'+':''}${e.h.toFixed(2)} m</span><span class="coef">${e.coef?('~'+e.coef):''}</span></div>`).join('')||'<div class="msg">—</div>';
+  let best=null,bd=Infinity; for(const e of LG.tide.events)if(e.type==='PM'&&e.coef&&Math.abs(evEpoch(e)-now)<bd){bd=Math.abs(evEpoch(e)-now);best=e;}
+  $('coefNow').textContent=best?`~${best.coef}`:'—'; }
+async function fetchDemES(bbox){ const url=`${WCS}?service=WCS&version=2.0.1&request=GetCoverage&coverageId=Elevacion4258_5&subset=Lat(${bbox.latMin},${bbox.latMax})&subset=Long(${bbox.lonMin},${bbox.lonMax})&format=application/asc`;
+  return parseASC(await (await fetch(url)).text()); }
+async function fetchDemFR(bbox){ const RES=5,latMid=(bbox.latMin+bbox.latMax)/2;
+  const W=Math.max(50,Math.min(1400,Math.round((bbox.lonMax-bbox.lonMin)*111320*Math.cos(latMid*Math.PI/180)/RES)));
+  const H=Math.max(50,Math.min(1400,Math.round((bbox.latMax-bbox.latMin)*111320/RES)));
+  const url=`${WMS_FR}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES&STYLES=&FORMAT=${encodeURIComponent('image/x-bil;bits=32')}&CRS=EPSG:4326&BBOX=${bbox.latMin},${bbox.lonMin},${bbox.latMax},${bbox.lonMax}&WIDTH=${W}&HEIGHT=${H}`;
+  const buf=await (await fetch(url)).arrayBuffer();
+  if(buf.byteLength!==W*H*4){ let msg='réponse inattendue IGN France'; try{msg=new TextDecoder().decode(buf.slice(0,400)).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,160)||msg;}catch(e){} throw new Error(msg); }
+  const raw=new Float32Array(buf),data=new Float32Array(raw.length);
+  for(let i=0;i<raw.length;i++){const v=raw[i];data[i]=(v<-10000||!isFinite(v))?-3:v;}
+  return {ncols:W,nrows:H,xll:bbox.lonMin,yll:bbox.latMin,dx:(bbox.lonMax-bbox.lonMin)/W,dy:(bbox.latMax-bbox.latMin)/H,nodata:-99999,data}; }
+function demProviderFor(lat,lon){ const inFR=lat>41.2&&lat<51.4&&lon>-5.7&&lon<10;
+  if(inFR&&(lat>43.8||(lat>42.3&&lon>-2.0)))return {label:'IGN France · RGE ALTI',fetch:fetchDemFR};
+  if(lat>27&&lat<44.2&&lon>-18.5&&lon<4.6)return {label:'IGN España · MDT05',fetch:fetchDemES}; return null; }
+function bboxAround(lat,lon){ return {latMin:lat-MAX_SPAN_LAT/2,latMax:lat+MAX_SPAN_LAT/2,lonMin:lon-MAX_SPAN_LON/2,lonMax:lon+MAX_SPAN_LON/2}; }
+async function analyzeLagoon(lat,lon){
+  if(map.getZoom()<14)map.setView([lat,lon],15); else map.panTo([lat,lon]);
+  const dm=$('demMsg'); dm.className='msg';
+  const prov=demProviderFor(lat,lon);
+  if(!prov){ dm.className='msg err'; dm.textContent='Zone hors couverture relief (Espagne & France).'; return; }
+  const tp=loadTides(lat,lon).catch(e=>{$('tideList').innerHTML=`<div class="msg err">Échec marée : ${e.message}</div>`;});
+  try{
+    dm.textContent=`Téléchargement du relief (${prov.label})…`; const gg=await prov.fetch(bboxAround(lat,lon));
+    dm.textContent=`Calcul des seuils (${gg.ncols}×${gg.nrows})…`; await new Promise(r=>setTimeout(r,20));
+    gg.thr=priorityFlood(gg.data,gg.ncols,gg.nrows); gg.bounds=[[gg.yll,gg.xll],[gg.yll+gg.nrows*gg.dy,gg.xll+gg.ncols*gg.dx]];
+    LG.dem=gg; state.lagoon.center={lat:+lat.toFixed(5),lon:+lon.toFixed(5)};
+    if(LG.overlay)map.removeLayer(LG.overlay);
+    LG.overlayCanvas=document.createElement('canvas'); LG.overlayCanvas.width=gg.ncols; LG.overlayCanvas.height=gg.nrows;
+    LG.overlay=new CanvasOverlay(LG.overlayCanvas,gg.bounds,{opacity:1,interactive:false});
+    if(state.layers.lagoon)LG.overlay.addTo(map);
+    buildLegend(); selectPointAt(lat,lon); repaintWater();
+    dm.className='msg ok'; dm.textContent=`Relief ${prov.label} : ${gg.ncols}×${gg.nrows} (~5 m). Clique un point pour le sonder.`;
+    persist();
+  }catch(err){ dm.className='msg err'; dm.textContent='Échec relief : '+err.message; }
+  await tp;
+}
+function depthColor(d){ const st=DEPTH_STOPS; if(d<=st[0][0]){const c=st[0][1];return [c[0],c[1],c[2],c[3]*(d/st[0][0])];}
+  for(let i=1;i<st.length;i++){ if(d<=st[i][0]){ const [d0,c0]=st[i-1],[d1,c1]=st[i],u=(d-d0)/(d1-d0);
+    return [c0[0]+(c1[0]-c0[0])*u,c0[1]+(c1[1]-c0[1])*u,c0[2]+(c1[2]-c0[2])*u,c0[3]+(c1[3]-c0[3])*u]; } }
+  return st[st.length-1][1]; }
+function repaintWater(){ updateSeaReadouts();
+  if(!LG.dem||!LG.tide||!LG.overlayCanvas)return;
+  const gg=LG.dem,n=gg.ncols*gg.nrows,Lv=lagoonLevelAt(LG.cursor),Lret=state.lagoon.retention?rollMaxAt(LG.cursor):-Infinity;
+  const ctx=LG.overlayCanvas.getContext('2d'),img=ctx.createImageData(gg.ncols,gg.nrows),px=img.data,H=gg.data,T=gg.thr;
+  for(let i=0;i<n;i++){ let lvl; if(Lv>=T[i])lvl=Lv; else if(Lret>=T[i])lvl=T[i]; else continue;
+    const d=lvl-H[i]; if(d<=0.02)continue; const c=depthColor(d),o=i*4; px[o]=c[0];px[o+1]=c[1];px[o+2]=c[2];px[o+3]=Math.round(c[3]*255); }
+  ctx.putImageData(img,0,0); }
+function buildLegend(){ const lg=$('legend'); lg.style.display=state.layers.lagoon?'block':'none';
+  lg.innerHTML='<div style="color:var(--muted);margin-bottom:2px">Profondeur d\'eau</div>'+DEPTH_STOPS.map(([d,c])=>`<div class="lrow"><span class="sw" style="background:rgba(${c[0]},${c[1]},${c[2]},${Math.min(1,c[3]+.15)})"></span><span class="lt">${d<1?Math.round(d*100)+' cm':d.toFixed(1).replace('.',',')+' m'}</span></div>`).join(''); }
+function selectPointAt(lat,lon){ if(!LG.dem)return false; const gg=LG.dem;
+  const col=Math.floor((lon-gg.xll)/gg.dx),row=gg.nrows-1-Math.floor((lat-gg.yll)/gg.dy);
+  if(col<0||col>=gg.ncols||row<0||row>=gg.nrows)return false;
+  if(LG.ptMarker)map.removeLayer(LG.ptMarker);
+  LG.ptMarker=L.circleMarker([lat,lon],{radius:7,color:'#f2a23d',weight:2,fillColor:'#f2a23d',fillOpacity:.35}).addTo(map);
+  LG.pt={lat,lon,idx:row*gg.ncols+col}; updateSeaReadouts(); return true; }
+function ptDepthAt(t){ const gg=LG.dem,i=LG.pt.idx,Lv=lagoonLevelAt(t); let lvl;
+  if(Lv>=gg.thr[i])lvl=Lv; else if(state.lagoon.retention&&rollMaxAt(t)>=gg.thr[i])lvl=gg.thr[i]; else return 0; return Math.max(0,lvl-gg.data[i]); }
+function updateSeaReadouts(){
+  $('seaNow').textContent=LG.tide?((seaLevelAt(LG.cursor)>=0?'+':'')+seaLevelAt(LG.cursor).toFixed(2)+' m'):'—';
+  if(LG.pt&&LG.dem){ const gg=LG.dem,i=LG.pt.idx;
+    if(gg.data[i]<=-2.99){ $('ptAlt').textContent='fond non mesuré'; $('ptThr').textContent='—'; $('ptDepth').textContent='en eau au levé'; }
+    else { $('ptAlt').textContent=gg.data[i].toFixed(2)+' m'; $('ptThr').textContent=gg.thr[i].toFixed(2)+' m';
+      const d=ptDepthAt(LG.cursor); $('ptDepth').textContent=d>0.01?d.toFixed(2)+' m':'à sec'; $('ptDepth').style.color=d>0.01?'var(--wind)':'var(--signal)'; } }
+  else { $('ptAlt').textContent='—';$('ptThr').textContent='—';$('ptDepth').textContent='—'; }
+  if(state.mode==='lagoon')$('mbRead').innerHTML=LG.tide?('mer <b>'+(seaLevelAt(LG.cursor)>=0?'+':'')+seaLevelAt(LG.cursor).toFixed(2)+'</b>'):'LagoonX';
+}
+function setCursor(t){ if(LG.tide)t=Math.max(LG.tide.t0,Math.min(LG.tide.t1,t)); LG.cursor=t;
+  $('timeSlider').value=t; const isNow=Math.abs(t-Date.now())<8*60e3;
+  $('timelabel').innerHTML=fmtT(t)+(isNow?' <small>(maintenant)</small>':''); repaintWater(); scheduleCursorSave(); }
+let curSaveT=null; function scheduleCursorSave(){ clearTimeout(curSaveT); curSaveT=setTimeout(persist,300); }
+$('timeSlider').addEventListener('input',()=>setCursor(parseFloat($('timeSlider').value)));
+$('btnNow').addEventListener('click',()=>setCursor(Date.now()));
+$('btnMinus').addEventListener('click',()=>setCursor(LG.cursor-15*60e3));
+$('btnPlus').addEventListener('click',()=>setCursor(LG.cursor+15*60e3));
+$('btnPlay').addEventListener('click',()=>{ LG.playing=!LG.playing; $('btnPlay').textContent=LG.playing?'⏸':'▶';
+  if(LG.playing){ LG.playTimer=setInterval(()=>{ if(!LG.tide)return; let t=LG.cursor+10*60e3; if(t>LG.tide.t1)t=LG.tide.t0; setCursor(t); },120); }
+  else clearInterval(LG.playTimer); });
+['calOffset','tideShift','calDelay'].forEach(id=>$(id).addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;
+  if(id==='calOffset')state.lagoon.off=v; else if(id==='tideShift')state.lagoon.shift=v; else state.lagoon.lag=v;
+  repaintWater(); renderTideList(); persist();}));
+$('chkRetention').addEventListener('change',e=>{state.lagoon.retention=e.target.checked;repaintWater();persist();});
+
+/* ===================== calques / focus ===================== */
+const HINTS={ glide:'Cliquez pour poser le <b>départ</b>, puis l\'<b>arrivée</b>', longe:'Cliquez pour poser une <b>corde</b>', lagoon:'Cliquez un point à <b>analyser</b> (relief + marée)' };
+function redrawVisible(){ drawGlide(); drawLonge();
+  if(state.layers.lagoon){ if(LG.overlay&&!map.hasLayer(LG.overlay))LG.overlay.addTo(map); if(LG.ptMarker&&!map.hasLayer(LG.ptMarker))LG.ptMarker.addTo(map); repaintWater(); $('legend').style.display=LG.dem?'block':'none'; }
+  else { if(LG.overlay&&map.hasLayer(LG.overlay))map.removeLayer(LG.overlay); if(LG.ptMarker&&map.hasLayer(LG.ptMarker))map.removeLayer(LG.ptMarker); $('legend').style.display='none'; }
+  $('timebar').classList.toggle('on', state.layers.lagoon && !!LG.tide);
+}
+function syncLayerBoxes(){ $('layGlide').checked=state.layers.glide; $('layLonge').checked=state.layers.longe; $('layLagoon').checked=state.layers.lagoon; }
 function switchMode(m){
-  state.mode=m;
+  state.mode=m; state.layers[m]=true; syncLayerBoxes();
   document.querySelectorAll('#modeTabs button').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
-  document.getElementById('mGlide').style.display=m==='glide'?'':'none';
-  document.getElementById('mLonge').style.display=m==='longe'?'':'none';
-  document.getElementById('mLagune').style.display=m==='lagune'?'':'none';
-  const hint=document.getElementById('hint'); hint.innerHTML=HINTS[m]||'';
-  // nettoie les marqueurs des autres modes
-  if(m!=='glide'){ if(gFrom){map.removeLayer(gFrom);gFrom=null;} if(gTo){map.removeLayer(gTo);gTo=null;} glideLayer.clearLayers(); }
-  if(m!=='longe'){ anchorMarkers.forEach(x=>map.removeLayer(x));anchorMarkers=[]; if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} longeLayer.clearLayers(); }
-  if(m==='glide'){ fillWingSelectors(); glideRedraw(); }
-  else if(m==='longe'){ renderMarkers(); renderSpotList(); syncRopeInputs(); longeRedraw(); }
-  else { hint.style.display='none'; document.getElementById('mbRead').textContent='Lagune'; }
-  persist();
+  $('mGlide').style.display=m==='glide'?'':'none'; $('mLonge').style.display=m==='longe'?'':'none'; $('mLagoon').style.display=m==='lagoon'?'':'none';
+  const hint=$('hint'); hint.innerHTML=HINTS[m]||''; hint.style.display=hintNeeded(m)?'':'none';
+  if(m==='glide')fillWingSelectors();
+  if(m==='longe'){ syncRopeInputs(); renderSpotList(); }
+  redrawVisible(); persist();
 }
+function hintNeeded(m){ if(m==='glide')return state.layers.glide&&!g.to; if(m==='longe')return state.layers.longe&&!L_.ropes.length; if(m==='lagoon')return state.layers.lagoon&&!LG.dem; return false; }
 document.querySelectorAll('#modeTabs button').forEach(b=>b.addEventListener('click',()=>switchMode(b.dataset.mode)));
+[['layGlide','glide'],['layLonge','longe'],['layLagoon','lagoon']].forEach(([id,k])=>$(id).addEventListener('change',e=>{
+  state.layers[k]=e.target.checked; redrawVisible(); $('hint').style.display=hintNeeded(state.mode)?'':'none'; persist(); }));
 
-map.on('click',e=>{
-  if(state.mode==='glide'){
-    if(!g.from) g.from={lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};
-    else if(!g.to) g.to={lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};
-    else g.to={lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};
-    glideRedraw(); persist();
-  } else if(state.mode==='longe'){ addRope(e.latlng.lat,e.latlng.lng); }
+map.on('click',e=>{ const lat=e.latlng.lat,lon=e.latlng.lng;
+  if(state.mode==='glide'){ if(!g.from)g.from={lat:+lat.toFixed(6),lng:+lon.toFixed(6)}; else g.to={lat:+lat.toFixed(6),lng:+lon.toFixed(6)}; state.layers.glide=true;syncLayerBoxes();drawGlide();$('hint').style.display=hintNeeded('glide')?'':'none';persist(); }
+  else if(state.mode==='longe'){ state.layers.longe=true;syncLayerBoxes();addRope(lat,lon);$('hint').style.display='none'; }
+  else if(state.mode==='lagoon'){ if(LG.dem&&selectPointAt(lat,lon)){ persist(); } else showAnalyzePopup(lat,lon); }
 });
+function showAnalyzePopup(lat,lon){ const div=document.createElement('div');
+  const txt=document.createElement('div'); txt.style.marginBottom='8px';
+  txt.innerHTML=`Analyser cet endroit ?<br><span style="color:var(--muted);font-size:11px">relief 5 m + marée (~3 × 3 km)</span>`;
+  const btn=document.createElement('button'); btn.className='primary'; btn.textContent='🔍 Analyser ici';
+  btn.onclick=()=>{map.closePopup();analyzeLagoon(lat,lon);}; div.appendChild(txt);div.appendChild(btn);
+  L.popup().setLatLng([lat,lon]).setContent(div).openOn(map); }
 
-document.getElementById('openLagoon').addEventListener('click',()=>window.open('https://lagoonx.xavier-kain.fr/','_blank'));
-
-/* ============ partage / recherche / géoloc / mobile ============ */
-document.getElementById('btnShare').addEventListener('click',async()=>{
-  const msg=document.getElementById('shareMsg'); persist();
+/* ===================== partage / recherche / géoloc / mobile ===================== */
+$('btnShare').addEventListener('click',async()=>{ const msg=$('shareMsg'); persist();
   try{ await navigator.clipboard.writeText(location.href); msg.textContent='Lien copié ✓'; msg.className='msg ok'; }
-  catch(e){ window.prompt('Copier le lien :',location.href); msg.textContent=''; }
-  setTimeout(()=>{msg.textContent='';},5000);
-});
-document.getElementById('btnGeo').addEventListener('click',()=>{ if(!navigator.geolocation)return;
+  catch(e){ window.prompt('Copier le lien :',location.href); msg.textContent=''; } setTimeout(()=>{msg.textContent='';},5000); });
+$('btnGeo').addEventListener('click',()=>{ if(!navigator.geolocation)return;
   navigator.geolocation.getCurrentPosition(p=>map.setView([p.coords.latitude,p.coords.longitude],16),()=>alert('Position indisponible'),{enableHighAccuracy:true,timeout:8000}); });
-
-const searchBox=document.getElementById('searchBox'), searchRes=document.getElementById('searchRes');
-let searchTimer=null;
+const searchBox=$('searchBox'),searchRes=$('searchRes'); let searchTimer=null;
 searchBox.addEventListener('input',()=>{ clearTimeout(searchTimer); const q=searchBox.value.trim();
   if(q.length<3){searchRes.style.display='none';return;}
-  searchTimer=setTimeout(async()=>{ try{
-    const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q='+encodeURIComponent(q),{headers:{'Accept-Language':'fr'}});
-    const items=await r.json(); searchRes.innerHTML='';
-    items.forEach(it=>{const d=document.createElement('div');d.textContent=it.display_name;
+  searchTimer=setTimeout(async()=>{ try{ const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q='+encodeURIComponent(q),{headers:{'Accept-Language':'fr'}});
+    const items=await r.json(); searchRes.innerHTML=''; items.forEach(it=>{const d=document.createElement('div');d.textContent=it.display_name;
       d.addEventListener('click',()=>{searchRes.style.display='none';searchBox.value=it.display_name.split(',')[0];map.setView([+it.lat,+it.lon],15);});searchRes.appendChild(d);});
-    searchRes.style.display=items.length?'block':'none';
-  }catch(e){searchRes.style.display='none';} },350);
-});
+    searchRes.style.display=items.length?'block':'none'; }catch(e){searchRes.style.display='none';} },350); });
 document.addEventListener('click',e=>{if(!searchRes.contains(e.target)&&e.target!==searchBox)searchRes.style.display='none';});
-
-const panel=document.getElementById('panel'), backdrop=document.getElementById('panelBackdrop');
-document.getElementById('mbBurger').addEventListener('click',()=>{panel.classList.toggle('open');backdrop.classList.toggle('show',panel.classList.contains('open'));});
+const panel=$('panel'),backdrop=$('panelBackdrop');
+$('mbBurger').addEventListener('click',()=>{panel.classList.toggle('open');backdrop.classList.toggle('show',panel.classList.contains('open'));});
 backdrop.addEventListener('click',()=>{panel.classList.remove('open');backdrop.classList.remove('show');});
 
-/* ============ init ============ */
+/* ===================== init ===================== */
 fillWingSelectors();
-document.getElementById('gVx').value=g.vx; document.getElementById('gFbest').value=g.fBest;
-document.getElementById('gFplan').value=g.fPlan; document.getElementById('gDh').value=g.dh; document.getElementById('gMargin').value=g.margin;
-setWind(state.wind.dir, state.wind.kt);
+$('gVx').value=g.vx;$('gFbest').value=g.fBest;$('gFplan').value=g.fPlan;$('gDh').value=g.dh;$('gMargin').value=g.margin;
+$('calOffset').value=state.lagoon.off;$('tideShift').value=state.lagoon.shift;$('calDelay').value=state.lagoon.lag;$('chkRetention').checked=state.lagoon.retention;
+setWind(state.wind.dir,state.wind.kt);
 switchMode(state.mode);
-if(!state.view && fromShare){
-  const pts=[];
-  L_.ropes.forEach(p=>pts.push([p.lat,p.lng])); if(g.from)pts.push([g.from.lat,g.from.lng]); if(g.to)pts.push([g.to.lat,g.to.lng]);
-  if(pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.4));
-}
+if(!state.view&&fromShare){ const pts=[]; L_.ropes.forEach(p=>pts.push([p.lat,p.lng])); if(g.from)pts.push([g.from.lat,g.from.lng]); if(g.to)pts.push([g.to.lat,g.to.lng]);
+  if(state.lagoon.center)pts.push([state.lagoon.center.lat,state.lagoon.center.lon]); if(pts.length)map.fitBounds(L.latLngBounds(pts).pad(0.4)); }
 persist();
 </script>
 </body>

@@ -4,14 +4,21 @@
 modes qui répondent tous à la même question — *« sur ce spot, avec ce vent, où puis-je
 évoluer en sécurité ? »* :
 
-| Mode | Question | Ce qu'on pose | Zone calculée |
+| Calque | Question | Ce qu'on pose | Zone calculée |
 |---|---|---|---|
-| **Plané** | J'atteins ma cible en plané ? | départ → arrivée + voile | empreinte atteignable (cercle décalé par le vent), verdict ✓/⚠/✕ |
-| **Longe** | Quelle zone au bout de ma corde ? | ancrage(s) + longueur | demi-cercle sous le vent |
-| **Lagune** | Quand/où y a-t-il de l'eau ? | *(intégration native à venir — ouvre LagoonX)* | profondeur selon la marée |
+| **GlideX** | J'atteins ma cible en plané ? | départ → arrivée + voile | empreinte atteignable (cercle décalé par le vent), verdict ✓/⚠/✕ |
+| **AirsurfX** | Quelle zone au bout de ma corde ? | ancrage(s) + longueur | demi-cercle sous le vent |
+| **LagoonX** | Quand/où y a-t-il de l'eau ? | point sur le relief LiDAR | profondeur selon la marée, dans le temps |
 
-Fusion de trois prototypes : **GlideX** (plané), **AirsurfX** (longe), **LagoonX** (lagune).
-Même socle : Leaflet, fonds satellite/OSM/topo **sans clé API**, thème sombre « instrument ».
+Fusion **native** de trois prototypes : **GlideX** (plané), **AirsurfX** (longe),
+**LagoonX** (lagune). Même socle : Leaflet, fonds satellite/OSM/topo **sans clé API**,
+thème sombre « instrument ».
+
+### Calques superposables
+
+Les trois calques se **superposent** : les cases *Calques* montrent/cachent chacun
+indépendamment, l'onglet choisit lequel s'édite (reçoit les clics + panneau). On peut ainsi
+voir l'eau **LagoonX** sous la fenêtre de vol **AirsurfX**, ou l'empreinte **GlideX** par-dessus.
 
 **Live : [airspotx.xavier-kain.fr](https://airspotx.xavier-kain.fr)** — ou ouvrir `index.html`.
 
@@ -24,8 +31,13 @@ Même socle : Leaflet, fonds satellite/OSM/topo **sans clé API**, thème sombre
   cas chiffrés (Bandit 16, 10 kt de cul, cible 500 m → arrivée 656 m sol, 28,8 s, 62,5 km/h).
   Base voiles (Flare Bandit / Moustache), fourchette de finesse best/prudente, marge de
   sécurité, temps de vol, vitesse sol, composante vent, verdict.
-- **Longe** : multi-cordes nommées, demi-cercle sous le vent, étiquette de longueur sur la
+- **AirsurfX** : multi-cordes nommées, demi-cercle sous le vent, étiquette de longueur sur la
   carte, poignée de réglage, curseur 100–1000 m (saisie libre jusqu'à 5 km).
+- **LagoonX** : moteur repris **verbatim** (relief LiDAR IGN España MDT05 / IGN France RGE ALTI,
+  marée Open-Meteo, seuil hydraulique par *priority-flood*). Clic → analyse d'une zone ~3×3 km,
+  overlay de profondeur coloré, **barre temporelle** (Maintenant / ±15 min / ▶) qui remplit et
+  vide l'eau, liste des prochaines PM/BM + coefficient, sonde de point, calibration (décalage
+  niveau/horaire, retard lagune, rétention). Pipeline validé de bout en bout sur données réelles.
 
 ## Partage
 
@@ -48,8 +60,8 @@ bash deploy.sh   # rsync → airspotx.xavier-kain.fr
 
 ## Roadmap
 
-1. **Lagune native** : porter le moteur relief LiDAR + marée de LagoonX dans la coque.
-2. **Profil de relief** sous la trajectoire de plané (alerte franchissement d'obstacle).
-3. Vent réel du spot (Open-Meteo) pré-rempli sur le cadran, partagé par les modes.
+1. **Profil de relief** sous la trajectoire de plané (alerte franchissement d'obstacle).
+2. Vent réel du spot (Open-Meteo) pré-rempli sur le cadran, partagé par les calques.
+3. LagoonX : courbe de marée interactive + fenêtres de mise en eau (héritées du proto complet).
 4. Voiles calibrées par tracklogs, altitude sol auto (Open-Meteo elevation).
 5. PWA offline terrain (cache tuiles + données).
