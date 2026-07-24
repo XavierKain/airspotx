@@ -11,6 +11,7 @@
     --bg:#0c1311; --panel:#12201c; --edge:#1e332d; --grid:#182823;
     --ink:#e9efeb; --muted:#7f958d; --faint:#42544d;
     --signal:#f2a23d; --wind:#43ccd6;
+    --serie:#22a0aa; --cursor:#c98224;
     --danger:#e5544d; --ok:#79d29a; --warn:#e8c15a;
   }
   *{box-sizing:border-box}
@@ -119,6 +120,11 @@
   #timelabel{min-width:170px;text-align:center;font-variant-numeric:tabular-nums;font-weight:600}
   #timelabel small{color:var(--muted);font-weight:400}
   .tnudge{font-variant-numeric:tabular-nums;font-weight:600}
+  #chartwrap{position:relative;height:112px;margin-top:8px}
+  #chart{width:100%;height:100%;display:block;cursor:ew-resize;touch-action:none}
+  #tooltip{position:absolute;pointer-events:none;background:#0e1a16;border:1px solid var(--edge);
+    border-radius:6px;padding:5px 8px;font-size:12px;font-variant-numeric:tabular-nums;
+    display:none;white-space:nowrap;z-index:20;box-shadow:0 3px 10px rgba(0,0,0,.5)}
 
   #mobileBar,#panelBackdrop{display:none}
   @media (max-width:760px){
@@ -306,6 +312,7 @@
       <button id="btnPlay" title="Animer">▶</button>
       <input type="range" id="timeSlider" min="0" max="100" step="1" value="50">
     </div>
+    <div id="chartwrap"><canvas id="chart"></canvas><div id="tooltip"></div></div>
   </div>
 </div>
 
@@ -653,7 +660,7 @@ const WCS='https://servicios.idee.es/wcs-inspire/mdt', WMS_FR='https://data.geop
 const MAX_SPAN_LAT=0.030,MAX_SPAN_LON=0.036;
 const DEPTH_STOPS=[[0.05,[168,224,235,0.35]],[0.25,[110,192,220,0.50]],[0.50,[62,150,200,0.62]],[1.00,[30,100,170,0.72]],[2.00,[12,60,120,0.80]]];
 const JOURS=['dim','lun','mar','mer','jeu','ven','sam'],MOIS=['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
-const LG={ tide:null, dem:null, overlay:null, overlayCanvas:null, cursor:Date.now(), viewDay:null, pt:null, ptMarker:null, playing:false, playTimer:null };
+const LG={ tide:null, dem:null, overlay:null, overlayCanvas:null, cursor:Date.now(), viewDay:null, pt:null, ptMarker:null, playing:false, playTimer:null, chartHover:null };
 const CanvasOverlay=L.ImageOverlay.extend({ _initImage(){ this._image=this._url; L.DomUtil.addClass(this._image,'leaflet-image-layer lagoon-overlay');
   if(this._zoomAnimated)L.DomUtil.addClass(this._image,'leaflet-zoom-animated'); this._image.onselectstart=L.Util.falseFn; this._image.onmousemove=L.Util.falseFn; } });
 function vOffM(){ return (state.lagoon.off||0)/100; }
@@ -766,7 +773,7 @@ function selectPointAt(lat,lon){ if(!LG.dem)return false; const gg=LG.dem;
   if(col<0||col>=gg.ncols||row<0||row>=gg.nrows)return false;
   if(LG.ptMarker)map.removeLayer(LG.ptMarker);
   LG.ptMarker=L.circleMarker([lat,lon],{radius:7,color:'#f2a23d',weight:2,fillColor:'#f2a23d',fillOpacity:.35}).addTo(map);
-  LG.pt={lat,lon,idx:row*gg.ncols+col}; updateSeaReadouts(); return true; }
+  LG.pt={lat,lon,idx:row*gg.ncols+col}; updateSeaReadouts(); drawChart(); return true; }
 function ptDepthAt(t){ const gg=LG.dem,i=LG.pt.idx,Lv=lagoonLevelAt(t); let lvl;
   if(Lv>=gg.thr[i])lvl=Lv; else if(state.lagoon.retention&&rollMaxAt(t)>=gg.thr[i])lvl=gg.thr[i]; else return 0; return Math.max(0,lvl-gg.data[i]); }
 function updateSeaReadouts(){
@@ -781,11 +788,73 @@ function updateSeaReadouts(){
 function setCursor(t){ if(LG.tide)t=Math.max(LG.tide.t0,Math.min(LG.tide.t1,t)); LG.cursor=t;
   if(LG.tide){ const day=localMidnight(t); if(LG.viewDay==null||Math.abs(day-LG.viewDay)>1000){ LG.viewDay=day; setSliderToDay(); syncDaySel(); } }
   $('timeSlider').value=t; const isNow=Math.abs(t-Date.now())<8*60e3;
-  $('timelabel').innerHTML=fmtT(t)+(isNow?' <small>(maintenant)</small>':''); repaintWater(); scheduleCursorSave(); }
+  $('timelabel').innerHTML=fmtT(t)+(isNow?' <small>(maintenant)</small>':''); repaintWater(); drawChart(); scheduleCursorSave(); }
 let curSaveT=null; function scheduleCursorSave(){ clearTimeout(curSaveT); curSaveT=setTimeout(persist,300); }
 $('timeSlider').addEventListener('input',()=>setCursor(parseFloat($('timeSlider').value)));
 $('daySel').addEventListener('change',e=>{ if(!LG.tide)return; LG.viewDay=parseFloat(e.target.value); setSliderToDay();
   let t=LG.viewDay+12*3600e3; t=Math.max(parseFloat($('timeSlider').min),Math.min(parseFloat($('timeSlider').max),t)); setCursor(t); });
+
+/* --- graphe de marée interactif (repris de LagoonX) --- */
+function dayWindow(){ return [LG.viewDay, Math.min(LG.tide.t1, LG.viewDay+86400e3)]; }
+function ptNoData(){ return LG.pt && LG.dem && LG.dem.data[LG.pt.idx] <= -2.99; }
+const chartEl=$('chart'), tooltipEl=$('tooltip');
+function drawChart(){
+  if(!LG.tide || LG.viewDay==null || !state.layers.lagoon) return;
+  const w=chartEl.clientWidth, h=chartEl.clientHeight; if(!w||!h) return;
+  const dpr=window.devicePixelRatio||1;
+  if(chartEl.width!==Math.round(w*dpr)){ chartEl.width=Math.round(w*dpr); chartEl.height=Math.round(h*dpr); }
+  const ctx=chartEl.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  const [ta,tb]=dayWindow(), padL=34,padR=6,padT=12,padB=16, iw=w-padL-padR, ih=h-padT-padB, vo=vOffM();
+  let vmn=Infinity,vmx=-Infinity; for(const v of LG.tide.values){ if(v<vmn)vmn=v; if(v>vmx)vmx=v; }
+  const vmin=vmn+vo-0.15, vmax=vmx+vo+0.15;
+  const X=t=>padL+iw*(t-ta)/(tb-ta), Y=v=>padT+ih*(1-(v-vmin)/(vmax-vmin));
+  const css=getComputedStyle(document.documentElement), C=n=>css.getPropertyValue(n).trim();
+  const cInk=C('--ink'),cMut=C('--muted'),cGrid=C('--grid'),cSerie=C('--serie'),cCur=C('--cursor'),cFaint=C('--faint');
+  const range=vmax-vmin, gstep=range>6?2:range>3?1:0.5;
+  ctx.font='10px sans-serif'; ctx.fillStyle=cMut;
+  for(let v=Math.ceil(vmin/gstep)*gstep;v<=vmax;v+=gstep){
+    ctx.strokeStyle=Math.abs(v)<1e-9?cFaint:cGrid; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padL,Y(v)); ctx.lineTo(w-padR,Y(v)); ctx.stroke();
+    ctx.fillText((v>0?'+':'')+v.toFixed(1),2,Y(v)+3); }
+  const off=LG.tide.utcOff*1000, hstep=3*3600e3; let tk=Math.ceil((ta+off)/hstep)*hstep-off;
+  for(;tk<=tb;tk+=hstep){ if(tk<ta)continue; const dt=new Date(tk+off), midnight=dt.getUTCHours()===0;
+    ctx.strokeStyle=midnight?cFaint:cGrid; ctx.beginPath(); ctx.moveTo(X(tk),padT); ctx.lineTo(X(tk),h-padB); ctx.stroke();
+    ctx.fillStyle=cMut; ctx.fillText(midnight?`${JOURS[dt.getUTCDay()]} ${dt.getUTCDate()}`:`${String(dt.getUTCHours()).padStart(2,'0')}h`,X(tk)+2,h-4); }
+  ctx.beginPath(); const NPT=240;
+  for(let k=0;k<=NPT;k++){ const t=ta+(tb-ta)*k/NPT, v=seaLevelAt(t); k===0?ctx.moveTo(X(t),Y(v)):ctx.lineTo(X(t),Y(v)); }
+  ctx.strokeStyle=cSerie; ctx.lineWidth=2; ctx.stroke();
+  ctx.lineTo(X(tb),Y(vmin)); ctx.lineTo(X(ta),Y(vmin)); ctx.closePath(); ctx.fillStyle='rgba(34,160,170,0.12)'; ctx.fill();
+  if(LG.pt&&LG.dem&&!ptNoData()){ const gg=LG.dem,i=LG.pt.idx;
+    for(const [val,lbl,dash] of [[gg.data[i],'sol',[2,3]],[gg.thr[i],'seuil',[6,4]]]){ if(val<vmin||val>vmax)continue;
+      ctx.strokeStyle=cCur; ctx.lineWidth=1; ctx.setLineDash(dash); ctx.beginPath(); ctx.moveTo(padL,Y(val)); ctx.lineTo(w-padR,Y(val)); ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle=cCur; ctx.fillText(lbl,w-padR-28,Y(val)-3); } }
+  ctx.font='10px sans-serif';
+  for(const e of LG.tide.events){ const te=evEpoch(e); if(te<ta||te>tb)continue; const vy=e.h+vo;
+    ctx.fillStyle=cSerie; ctx.beginPath(); ctx.arc(X(te),Y(vy),3,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(18,32,28,1)'; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle=cInk; ctx.textAlign='center'; ctx.fillText(fmtT(te,false),X(te),e.type==='PM'?Y(vy)-6:Y(vy)+13); ctx.textAlign='left'; }
+  const now=Date.now();
+  if(now>=ta&&now<=tb){ ctx.strokeStyle=cFaint; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(X(now),padT); ctx.lineTo(X(now),h-padB); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.strokeStyle=cCur; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(X(LG.cursor),padT); ctx.lineTo(X(LG.cursor),h-padB); ctx.stroke();
+  const cvv=seaLevelAt(LG.cursor); ctx.fillStyle=cCur; ctx.beginPath(); ctx.arc(X(LG.cursor),Y(cvv),4,0,7); ctx.fill(); ctx.strokeStyle='rgba(18,32,28,1)'; ctx.lineWidth=2; ctx.stroke();
+  if(LG.chartHover!=null){ ctx.strokeStyle='rgba(233,239,235,0.35)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(X(LG.chartHover),padT); ctx.lineTo(X(LG.chartHover),h-padB); ctx.stroke(); }
+  chartEl._geom={ta,tb,padL,padR,w};
+}
+function chartTimeAt(clientX){ const gm=chartEl._geom,rect=chartEl.getBoundingClientRect(),x=clientX-rect.left;
+  return gm.ta+(gm.tb-gm.ta)*Math.max(0,Math.min(1,(x-gm.padL)/(gm.w-gm.padL-gm.padR))); }
+function showChartTooltip(clientX){ const gm=chartEl._geom,rect=chartEl.getBoundingClientRect(),x=clientX-rect.left,t=chartTimeAt(clientX);
+  LG.chartHover=t; const v=seaLevelAt(t); let html=`<b>${fmtT(t)}</b> · mer ${v>=0?'+':''}${v.toFixed(2)} m`;
+  if(LG.pt&&LG.dem){ if(ptNoData())html+=' · point : fond n.m.'; else { const d=ptDepthAt(t); html+=` · point : ${d>0.01?d.toFixed(2)+' m':'à sec'}`; } }
+  tooltipEl.innerHTML=html; tooltipEl.style.display='block'; const tw=tooltipEl.offsetWidth;
+  tooltipEl.style.left=Math.min(x+12,rect.width-tw-4)+'px'; tooltipEl.style.top='6px'; drawChart(); }
+let chartDrag=false;
+chartEl.addEventListener('pointerdown',ev=>{ if(!LG.tide||!chartEl._geom)return; chartDrag=true;
+  try{chartEl.setPointerCapture(ev.pointerId);}catch(e){} setCursor(chartTimeAt(ev.clientX)); showChartTooltip(ev.clientX); ev.preventDefault(); });
+chartEl.addEventListener('pointermove',ev=>{ if(!LG.tide||!chartEl._geom)return; if(chartDrag)setCursor(chartTimeAt(ev.clientX)); showChartTooltip(ev.clientX); });
+chartEl.addEventListener('pointerup',()=>{ chartDrag=false; });
+chartEl.addEventListener('pointercancel',()=>{ chartDrag=false; });
+chartEl.addEventListener('mouseleave',()=>{ LG.chartHover=null; tooltipEl.style.display='none'; drawChart(); });
+window.addEventListener('resize',drawChart);
 $('btnNow').addEventListener('click',()=>setCursor(Date.now()));
 $('btnMinus').addEventListener('click',()=>setCursor(LG.cursor-15*60e3));
 $('btnPlus').addEventListener('click',()=>setCursor(LG.cursor+15*60e3));
@@ -794,13 +863,13 @@ $('btnPlay').addEventListener('click',()=>{ LG.playing=!LG.playing; $('btnPlay')
   else clearInterval(LG.playTimer); });
 ['calOffset','tideShift','calDelay'].forEach(id=>$(id).addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;
   if(id==='calOffset')state.lagoon.off=v; else if(id==='tideShift')state.lagoon.shift=v; else state.lagoon.lag=v;
-  repaintWater(); renderTideList(); persist();}));
-$('chkRetention').addEventListener('change',e=>{state.lagoon.retention=e.target.checked;repaintWater();persist();});
+  repaintWater(); renderTideList(); drawChart(); persist();}));
+$('chkRetention').addEventListener('change',e=>{state.lagoon.retention=e.target.checked;repaintWater();drawChart();persist();});
 
 /* ===================== calques / focus ===================== */
 const HINTS={ glide:'Cliquez pour poser le <b>départ</b>, puis l\'<b>arrivée</b>', longe:'Cliquez pour poser une <b>corde</b>', lagoon:'Cliquez un point à <b>analyser</b> (relief + marée)' };
 function redrawVisible(){ drawGlide(); drawLonge();
-  if(state.layers.lagoon){ if(LG.overlay&&!map.hasLayer(LG.overlay))LG.overlay.addTo(map); if(LG.ptMarker&&!map.hasLayer(LG.ptMarker))LG.ptMarker.addTo(map); repaintWater(); $('legend').style.display=LG.dem?'block':'none'; }
+  if(state.layers.lagoon){ if(LG.overlay&&!map.hasLayer(LG.overlay))LG.overlay.addTo(map); if(LG.ptMarker&&!map.hasLayer(LG.ptMarker))LG.ptMarker.addTo(map); repaintWater(); requestAnimationFrame(drawChart); $('legend').style.display=LG.dem?'block':'none'; }
   else { if(LG.overlay&&map.hasLayer(LG.overlay))map.removeLayer(LG.overlay); if(LG.ptMarker&&map.hasLayer(LG.ptMarker))map.removeLayer(LG.ptMarker); $('legend').style.display='none'; }
   $('timebar').classList.toggle('on', state.layers.lagoon && !!LG.tide);
 }
