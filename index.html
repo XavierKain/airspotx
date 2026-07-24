@@ -232,6 +232,18 @@
         <div class="kv" style="margin-top:6px"><span class="k">Surface</span><span class="v" id="lArea">—</span></div>
         <div class="kv"><span class="k">Largeur travers</span><span class="v" id="lWide">—</span></div>
       </section>
+      <section>
+        <h2>Plané depuis la corde (3D)</h2>
+        <label class="inline"><input type="checkbox" id="r3d"> Position en l'air + zone de plané atteignable</label>
+        <div id="r3dPanel" style="display:none;margin-top:6px">
+          <label class="fld">Hauteur sur la corde <span><input id="rHRange" type="range" min="0" max="1000" step="5" style="width:110px"><input id="rHNum" type="number" min="0" step="5" style="width:56px"> <span class="unit">m</span></span></label>
+          <div class="kv"><span class="k">Dist. horiz. à l'ancrage</span><span class="v" id="r3dRh">—</span></div>
+          <div class="kv"><span class="k">Finesse-sol retour ancrage</span><span class="v" id="r3dFsol">—</span></div>
+          <div class="kv"><span class="k">Portée plané sous le vent</span><span class="v" id="r3dReach">—</span></div>
+          <div class="verdict" id="r3dVerdict" style="display:none"></div>
+          <div class="sub">▲ = ta position en l'air (corde tendue). Finesse = voile GlideX. Zone verte = où tu peux te poser en larguant à cette hauteur.</div>
+        </div>
+      </section>
     </div>
 
     <!-- ============ LAGOONX ============ -->
@@ -543,6 +555,29 @@ const handleIcon=L.divIcon({className:'handle-icon',iconSize:[20,20],iconAnchor:
   html:'<svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#f2a23d" stroke="#0c1311" stroke-width="2"/></svg>'});
 const selRope=()=>L_.sel>=0?L_.ropes[L_.sel]:null;
 const ropeName=(p,i)=>p.name||'Corde '+(i+1);
+/* --- plané 3D depuis la corde --- */
+function pilotIcon(h){ return L.divIcon({className:'pilot-icon',iconSize:[0,0],
+  html:`<div style="transform:translate(-50%,-50%);text-align:center;white-space:nowrap"><svg width="26" height="26" style="filter:drop-shadow(0 0 3px #000)"><polygon points="13,3 23,22 3,22" fill="#12201c" stroke="#79d29a" stroke-width="2"/></svg><div style="color:#c7f5d8;font-weight:700;font-size:11px;text-shadow:0 0 3px #000,0 0 5px #000">${Math.round(h)} m</div></div>`}); }
+function glideReach(from,to,dhAvail){ const {k}=glideK(),u=windUnit(state.wind.dir),{dE,dN}=enu(from,to);
+  const pu=dE*u[0]+dN*u[1],D=Math.hypot(dE,dN),k2=k*k,R0=(Math.sqrt(k2*pu*pu+(1-k2)*D*D)-k*pu)/(1-k2);
+  return {D,R0,okPlan:R0/g.fPlan<=dhAvail,okBest:R0/g.fBest<=dhAvail}; }
+function drawRope3D(p){
+  const Ln=p.rope,h=Math.max(0,Math.min(Ln,p.h)),rh=Math.sqrt(Math.max(0,Ln*Ln-h*h));
+  const down=norm360(state.wind.dir+180),Pa=dest(p.lat,p.lng,down,rh),Pll={lat:Pa[0],lng:Pa[1]};
+  const {k}=glideK(),u=windUnit(state.wind.dir),R0b=g.fBest*h,R0p=g.fPlan*h;
+  if(h>0){ L.polygon(footprintPoly(Pll,R0p,k,u),{color:'#79d29a',weight:1.5,opacity:.75,fillColor:'#79d29a',fillOpacity:.15,interactive:false}).addTo(longeLayer);
+    L.polygon(footprintPoly(Pll,R0b,k,u),{color:'#cdeede',weight:1,opacity:.5,dashArray:'5 6',fill:false,interactive:false}).addTo(longeLayer); }
+  L.polyline([[p.lat,p.lng],Pa],{color:'#f2a23d',weight:2,opacity:.8,interactive:false}).addTo(longeLayer);
+  L.marker(Pa,{icon:pilotIcon(h),interactive:false,keyboard:false,zIndexOffset:600}).addTo(longeLayer);
+  return {rh,h,k,R0p,reach:glideReach(Pll,{lat:p.lat,lng:p.lng},h)};
+}
+function update3D(info){ const set=(id,v)=>$(id).textContent=v,vd=$('r3dVerdict');
+  if(!info||info.h<=0){ ['r3dRh','r3dFsol','r3dReach'].forEach(id=>set(id,'—')); vd.style.display='none'; return; }
+  set('r3dRh',fmtM(info.rh)); set('r3dFsol',(info.rh/info.h).toFixed(1)); set('r3dReach',fmtM(info.R0p*(1+info.k)));
+  const r=info.reach,v=r.okPlan?'ok':r.okBest?'warn':'no'; vd.style.display=''; vd.className='verdict '+v;
+  vd.textContent=v==='ok'?'✓ Retour à l\'ancrage possible':v==='warn'?'⚠ Retour au best glide seulement':'✕ Retour ancrage hors de portée'; }
+function refresh3DPanel(){ const p=selRope(),on=!!(p&&p.h!=null); $('r3d').checked=on; $('r3dPanel').style.display=on?'':'none'; if(p)$('rHRange').max=Math.max(10,p.rope); }
+function sync3DInputs(){ const p=selRope(); if(!p||p.h==null)return; $('rHRange').max=Math.max(10,p.rope); $('rHRange').value=Math.min(p.rope,p.h); $('rHNum').value=Math.round(p.h); }
 function drawLonge(){
   longeLayer.clearLayers();
   const focused=state.mode==='longe';
@@ -557,12 +592,14 @@ function drawLonge(){
     L.marker(mid,{icon:L.divIcon({className:'rope-label'+(sel?'':' dim'),html:`<span>${p.name?`<small>${esc(p.name)}</small>`:''}${fmtM(p.rope)}</span>`,iconSize:[0,0]}),interactive:false,keyboard:false}).addTo(longeLayer);
   });
   const p=selRope();
-  if(p&&focused){ const tail=dest(p.lat,p.lng,state.wind.dir,p.rope*1.32),tip=dest(p.lat,p.lng,state.wind.dir,p.rope*1.06);
+  if(p&&focused&&(p.h==null)){ const tail=dest(p.lat,p.lng,state.wind.dir,p.rope*1.32),tip=dest(p.lat,p.lng,state.wind.dir,p.rope*1.06);
     const hl=Math.max(p.rope*0.09,3),h1=dest(tip[0],tip[1],state.wind.dir+32,hl),h2=dest(tip[0],tip[1],state.wind.dir-32,hl);
     L.polyline([tail,tip],{color:'#f2a23d',weight:3,opacity:.95,interactive:false}).addTo(longeLayer);
     L.polyline([h1,tip,h2],{color:'#f2a23d',weight:3,opacity:.95,interactive:false}).addTo(longeLayer); }
+  let info3d=null;
+  if(p&&p.h!=null) info3d=drawRope3D(p);
   if(focused){ renderMarkers(); positionHandle(); } else { anchorMarkers.forEach(m=>map.removeLayer(m));anchorMarkers=[]; if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} }
-  if(focused)longeReadouts();
+  if(focused){ longeReadouts(); refresh3DPanel(); update3D(info3d); }
 }
 function positionHandle(){ const p=selRope();
   if(!p){ if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} return; }
@@ -577,7 +614,7 @@ function renderMarkers(){ anchorMarkers.forEach(m=>map.removeLayer(m));
     m.on('click',()=>selectRope(i)); m.on('dragstart',()=>{if(L_.sel!==i)selectRope(i);});
     m.on('drag',e=>{const q=e.target.getLatLng();p.lat=+q.lat.toFixed(6);p.lng=+q.lng.toFixed(6);drawLonge();});
     m.on('dragend',()=>{persist();renderSpotList();}); return m; }); }
-function selectRope(i){ L_.sel=i; drawLonge(); renderSpotList(); syncRopeInputs(); persist(); }
+function selectRope(i){ L_.sel=i; drawLonge(); renderSpotList(); syncRopeInputs(); refresh3DPanel(); sync3DInputs(); persist(); }
 function addRope(lat,lng){ const prev=selRope()||L_.ropes[L_.ropes.length-1];
   L_.ropes.push({lat:+lat.toFixed(6),lng:+lng.toFixed(6),rope:prev?prev.rope:300}); selectRope(L_.ropes.length-1); }
 function deleteRope(i){ L_.ropes.splice(i,1); if(L_.sel>=L_.ropes.length)L_.sel=L_.ropes.length-1; drawLonge(); renderSpotList(); syncRopeInputs(); persist(); }
@@ -598,11 +635,17 @@ function renameRope(row,p,i){ const lbl=row.querySelector('.lbl'); if(!lbl)retur
   input.addEventListener('keydown',e=>{if(e.key==='Enter')commit();else if(e.key==='Escape'){done=true;renderSpotList();}});
   input.addEventListener('blur',commit); input.addEventListener('click',e=>e.stopPropagation()); }
 function syncRopeInputs(){ const p=selRope(); if(!p)return;
-  $('ropeRange').value=Math.min(1000,Math.max(100,p.rope)); $('ropeNum').value=p.rope; }
-$('ropeRange').addEventListener('input',()=>{const p=selRope();if(!p)return;p.rope=+$('ropeRange').value;$('ropeNum').value=p.rope;drawLonge();renderSpotList();});
+  $('ropeRange').value=Math.min(1000,Math.max(100,p.rope)); $('ropeNum').value=p.rope; refresh3DPanel(); sync3DInputs(); }
+$('ropeRange').addEventListener('input',()=>{const p=selRope();if(!p)return;p.rope=+$('ropeRange').value;$('ropeNum').value=p.rope;if(p.h!=null&&p.h>p.rope)p.h=p.rope;refresh3DPanel();drawLonge();renderSpotList();});
 $('ropeRange').addEventListener('change',persist);
 $('ropeNum').addEventListener('input',()=>{const p=selRope();if(!p)return;const v=Math.round(+$('ropeNum').value);
-  if(Number.isFinite(v)&&v>=1){p.rope=Math.min(5000,v);$('ropeRange').value=Math.min(1000,Math.max(100,v));drawLonge();renderSpotList();persist();}});
+  if(Number.isFinite(v)&&v>=1){p.rope=Math.min(5000,v);$('ropeRange').value=Math.min(1000,Math.max(100,v));if(p.h!=null&&p.h>p.rope)p.h=p.rope;refresh3DPanel();drawLonge();renderSpotList();persist();}});
+$('r3d').addEventListener('change',e=>{const p=selRope();if(!p)return;
+  if(e.target.checked)p.h=(p.h!=null?p.h:Math.round(p.rope*0.4)); else delete p.h;
+  refresh3DPanel(); sync3DInputs(); drawLonge(); persist();});
+['rHRange','rHNum'].forEach(id=>$(id).addEventListener('input',e=>{const p=selRope();if(!p||p.h==null)return;
+  let v=Math.round(+e.target.value); if(!Number.isFinite(v))return; v=Math.max(0,Math.min(p.rope,v)); p.h=v;
+  $('rHRange').value=v; $('rHNum').value=v; drawLonge(); persist();}));
 
 /* ===================== LAGOONX ===================== */
 const WCS='https://servicios.idee.es/wcs-inspire/mdt', WMS_FR='https://data.geopf.fr/wms-r/wms', MARINE='https://marine-api.open-meteo.com/v1/marine';
@@ -652,14 +695,39 @@ function demProviderFor(lat,lon){ const inFR=lat>41.2&&lat<51.4&&lon>-5.7&&lon<1
   if(inFR&&(lat>43.8||(lat>42.3&&lon>-2.0)))return {label:'IGN France · RGE ALTI',fetch:fetchDemFR};
   if(lat>27&&lat<44.2&&lon>-18.5&&lon<4.6)return {label:'IGN España · MDT05',fetch:fetchDemES}; return null; }
 function bboxAround(lat,lon){ return {latMin:lat-MAX_SPAN_LAT/2,latMax:lat+MAX_SPAN_LAT/2,lonMin:lon-MAX_SPAN_LON/2,lonMax:lon+MAX_SPAN_LON/2}; }
+/* repli mondial : tuiles terrain-RGB (AWS Terrarium, sans clé, CORS *) */
+function loadImg(url){ return new Promise((res,rej)=>{ const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>rej(new Error('tuile relief indisponible')); im.src=url; }); }
+async function fetchRetry(fn,tries){ let e; for(let i=0;i<tries;i++){ try{ return await fn(); }catch(err){ e=err; await new Promise(r=>setTimeout(r,350*(i+1))); } } throw e; }
+async function fetchDemTerrarium(bbox){
+  const latMid=(bbox.latMin+bbox.latMax)/2, mppZ0=156543.03*Math.cos(latMid*D2R);
+  let z=Math.max(12,Math.min(15,Math.round(Math.log2(mppZ0/6))));
+  const tileRange=z=>{ const n=Math.pow(2,z), lx=lon=>(lon+180)/360*n, ly=lat=>{const r=lat*D2R;return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n;};
+    return {n,x0:Math.floor(lx(bbox.lonMin)),x1:Math.floor(lx(bbox.lonMax)),y0:Math.floor(ly(bbox.latMax)),y1:Math.floor(ly(bbox.latMin))}; };
+  let t=tileRange(z); while((t.x1-t.x0+1)*(t.y1-t.y0+1)>24 && z>11){ z--; t=tileRange(z); }
+  const {n,x0,x1,y0,y1}=t, cols=x1-x0+1, rows=y1-y0+1, cvW=cols*256, cvH=rows*256;
+  const cv=document.createElement('canvas'); cv.width=cvW; cv.height=cvH; const ctx=cv.getContext('2d');
+  const jobs=[]; for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)
+    jobs.push(loadImg(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${tx}/${ty}.png`).then(im=>ctx.drawImage(im,(tx-x0)*256,(ty-y0)*256)));
+  await Promise.all(jobs);
+  const px=ctx.getImageData(0,0,cvW,cvH).data, data=new Float32Array(cvW*cvH);
+  for(let i=0;i<cvW*cvH;i++){ const o=i*4, e=(px[o]*256+px[o+1]+px[o+2]/256)-32768; data[i]=(!isFinite(e)||e<-120)?-3:e; }
+  const y2lat=y=>{const a=Math.PI*(1-2*y/n);return Math.atan(Math.sinh(a))*R2D;};
+  const west=x0/n*360-180, east=(x1+1)/n*360-180, north=y2lat(y0), south=y2lat(y1+1);
+  return {ncols:cvW,nrows:cvH,xll:west,yll:south,dx:(east-west)/cvW,dy:(north-south)/cvH,nodata:-99999,data};
+}
+async function loadDemGrid(lat,lon,setMsg){
+  const bbox=bboxAround(lat,lon), prov=demProviderFor(lat,lon);
+  if(prov){ try{ setMsg(`Téléchargement du relief (${prov.label})…`); return {g:await fetchRetry(()=>prov.fetch(bbox),3),label:prov.label}; }
+    catch(e){ setMsg('IGN indisponible — relief mondial de secours…'); } }
+  else setMsg('Relief mondial (terrain AWS)…');
+  return {g:await fetchRetry(()=>fetchDemTerrarium(bbox),2),label:'Terrain mondial (~10 m)'};
+}
 async function analyzeLagoon(lat,lon){
   if(map.getZoom()<14)map.setView([lat,lon],15); else map.panTo([lat,lon]);
   const dm=$('demMsg'); dm.className='msg';
-  const prov=demProviderFor(lat,lon);
-  if(!prov){ dm.className='msg err'; dm.textContent='Zone hors couverture relief (Espagne & France).'; return; }
   const tp=loadTides(lat,lon).catch(e=>{$('tideList').innerHTML=`<div class="msg err">Échec marée : ${e.message}</div>`;});
   try{
-    dm.textContent=`Téléchargement du relief (${prov.label})…`; const gg=await prov.fetch(bboxAround(lat,lon));
+    const {g:gg,label}=await loadDemGrid(lat,lon,m=>dm.textContent=m);
     dm.textContent=`Calcul des seuils (${gg.ncols}×${gg.nrows})…`; await new Promise(r=>setTimeout(r,20));
     gg.thr=priorityFlood(gg.data,gg.ncols,gg.nrows); gg.bounds=[[gg.yll,gg.xll],[gg.yll+gg.nrows*gg.dy,gg.xll+gg.ncols*gg.dx]];
     LG.dem=gg; state.lagoon.center={lat:+lat.toFixed(5),lon:+lon.toFixed(5)};
@@ -668,7 +736,7 @@ async function analyzeLagoon(lat,lon){
     LG.overlay=new CanvasOverlay(LG.overlayCanvas,gg.bounds,{opacity:1,interactive:false});
     if(state.layers.lagoon)LG.overlay.addTo(map);
     buildLegend(); selectPointAt(lat,lon); repaintWater();
-    dm.className='msg ok'; dm.textContent=`Relief ${prov.label} : ${gg.ncols}×${gg.nrows} (~5 m). Clique un point pour le sonder.`;
+    dm.className='msg ok'; dm.textContent=`Relief ${label} : ${gg.ncols}×${gg.nrows}. Clique un point pour le sonder.`;
     persist();
   }catch(err){ dm.className='msg err'; dm.textContent='Échec relief : '+err.message; }
   await tp;

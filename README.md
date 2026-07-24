@@ -33,11 +33,18 @@ voir l'eau **LagoonX** sous la fenêtre de vol **AirsurfX**, ou l'empreinte **Gl
   sécurité, temps de vol, vitesse sol, composante vent, verdict.
 - **AirsurfX** : multi-cordes nommées, demi-cercle sous le vent, étiquette de longueur sur la
   carte, poignée de réglage, curseur 100–1000 m (saisie libre jusqu'à 5 km).
-- **LagoonX** : moteur repris **verbatim** (relief LiDAR IGN España MDT05 / IGN France RGE ALTI,
-  marée Open-Meteo, seuil hydraulique par *priority-flood*). Clic → analyse d'une zone ~3×3 km,
-  overlay de profondeur coloré, **barre temporelle** (Maintenant / ±15 min / ▶) qui remplit et
-  vide l'eau, liste des prochaines PM/BM + coefficient, sonde de point, calibration (décalage
-  niveau/horaire, retard lagune, rétention). Pipeline validé de bout en bout sur données réelles.
+  - **Plané depuis la corde (3D)** : corde fixe de longueur L attachée à l'ancrage. On règle la
+    **hauteur h** sur la corde ; l'app place la position en l'air à la distance horizontale
+    `√(L²−h²)` sous le vent, à l'altitude h, et calcule (finesse GlideX + vent) la **zone de
+    plané atteignable** en larguant à cette hauteur + le **verdict de retour à l'ancrage**
+    (plané amont contre le vent). C'est la combinaison GlideX × AirsurfX en 3D.
+- **LagoonX** : moteur repris **verbatim** (seuil hydraulique par *priority-flood*, marée
+  Open-Meteo). Clic → analyse d'une zone ~3×3 km, overlay de profondeur coloré, **barre
+  temporelle** (Maintenant / ±15 min / ▶) qui remplit et vide l'eau, prochaines PM/BM +
+  coefficient, sonde de point, calibration (décalage niveau/horaire, retard, rétention).
+  Relief à **3 sources** avec repli automatique : IGN España MDT05 (5 m) / IGN France RGE ALTI
+  (5 m), puis, en secours ou hors couverture, **terrain mondial AWS Terrarium** (~10 m, sans
+  clé, CORS) — donc LagoonX marche partout et résiste aux pannes intermittentes IGN (retry ×3).
 
 ## Partage
 
