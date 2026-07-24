@@ -299,6 +299,7 @@
   <div id="timebar">
     <div id="timerow">
       <button id="btnNow" title="Revenir à maintenant">Maintenant</button>
+      <select id="daySel" title="Jour affiché"></select>
       <button id="btnMinus" class="tnudge" title="−15 min">−15</button>
       <span id="timelabel">—</span>
       <button id="btnPlus" class="tnudge" title="+15 min">+15</button>
@@ -652,7 +653,7 @@ const WCS='https://servicios.idee.es/wcs-inspire/mdt', WMS_FR='https://data.geop
 const MAX_SPAN_LAT=0.030,MAX_SPAN_LON=0.036;
 const DEPTH_STOPS=[[0.05,[168,224,235,0.35]],[0.25,[110,192,220,0.50]],[0.50,[62,150,200,0.62]],[1.00,[30,100,170,0.72]],[2.00,[12,60,120,0.80]]];
 const JOURS=['dim','lun','mar','mer','jeu','ven','sam'],MOIS=['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
-const LG={ tide:null, dem:null, overlay:null, overlayCanvas:null, cursor:Date.now(), pt:null, ptMarker:null, playing:false, playTimer:null };
+const LG={ tide:null, dem:null, overlay:null, overlayCanvas:null, cursor:Date.now(), viewDay:null, pt:null, ptMarker:null, playing:false, playTimer:null };
 const CanvasOverlay=L.ImageOverlay.extend({ _initImage(){ this._image=this._url; L.DomUtil.addClass(this._image,'leaflet-image-layer lagoon-overlay');
   if(this._zoomAnimated)L.DomUtil.addClass(this._image,'leaflet-zoom-animated'); this._image.onselectstart=L.Util.falseFn; this._image.onmousemove=L.Util.falseFn; } });
 function vOffM(){ return (state.lagoon.off||0)/100; }
@@ -671,10 +672,16 @@ async function loadTides(lat,lon){
   const utcOff=d.utc_offset_seconds, epochs=d.hourly.time.map(t=>Date.parse(t+'Z')-utcOff*1000), values=d.hourly.sea_level_height_msl.map(v=>v==null?0:v);
   const events=findExtrema(epochs,values); computeCoefs(events); const levelFn=makeLevelFn(epochs,values);
   const t0=epochs[0],t1=epochs[epochs.length-1],rollMaxFn=makeRollingMaxFn(levelFn,t0,t1,13);
-  LG.tide={epochs,values,events,levelFn,rollMaxFn,utcOff,t0,t1};
-  const slider=$('timeSlider'); slider.min=t0; slider.max=t1; slider.step=60e3;
-  setCursor(Math.max(t0,Math.min(t1,Date.now()))); renderTideList();
+  LG.tide={epochs,values,events,levelFn,rollMaxFn,utcOff,t0,t1}; LG.viewDay=null;
+  populateDays(); setCursor(Math.max(t0,Math.min(t1,Date.now()))); renderTideList();
 }
+/* jour local du spot + curseur borné au jour affiché (résolution fine à la minute) */
+function localMidnight(t){ const off=LG.tide.utcOff*1000; return Math.floor((t+off)/86400e3)*86400e3-off; }
+function setSliderToDay(){ const s=$('timeSlider'); s.min=Math.max(LG.viewDay,LG.tide.t0); s.max=Math.min(LG.tide.t1,LG.viewDay+86400e3-60e3); s.step=60e3; }
+function populateDays(){ const ds=$('daySel'); ds.innerHTML=''; const off=LG.tide.utcOff*1000, dEnd=localMidnight(LG.tide.t1);
+  for(let d=localMidnight(LG.tide.t0); d<=dEnd; d+=86400e3){ const dt=new Date(d+off), o=document.createElement('option'); o.value=d;
+    o.textContent=`${JOURS[dt.getUTCDay()]} ${dt.getUTCDate()} ${MOIS[dt.getUTCMonth()]}`; ds.appendChild(o); } }
+function syncDaySel(){ const ds=$('daySel'), opt=[...ds.options].find(o=>Math.abs(parseFloat(o.value)-LG.viewDay)<1000); if(opt)ds.value=opt.value; }
 function renderTideList(){ if(!LG.tide)return; const now=Date.now();
   const next=LG.tide.events.filter(e=>evEpoch(e)>=now-30*60e3).slice(0,5);
   $('tideList').innerHTML=next.map(e=>`<div class="tide-ev"><span class="${e.type==='PM'?'pm':'bm'}">${e.type}</span><span class="t">${fmtT(evEpoch(e))}</span><span>${e.h>=0?'+':''}${e.h.toFixed(2)} m</span><span class="coef">${e.coef?('~'+e.coef):''}</span></div>`).join('')||'<div class="msg">—</div>';
@@ -735,7 +742,7 @@ async function analyzeLagoon(lat,lon){
     LG.overlayCanvas=document.createElement('canvas'); LG.overlayCanvas.width=gg.ncols; LG.overlayCanvas.height=gg.nrows;
     LG.overlay=new CanvasOverlay(LG.overlayCanvas,gg.bounds,{opacity:1,interactive:false});
     if(state.layers.lagoon)LG.overlay.addTo(map);
-    buildLegend(); selectPointAt(lat,lon); repaintWater();
+    buildLegend(); selectPointAt(lat,lon); repaintWater(); redrawVisible();
     dm.className='msg ok'; dm.textContent=`Relief ${label} : ${gg.ncols}×${gg.nrows}. Clique un point pour le sonder.`;
     persist();
   }catch(err){ dm.className='msg err'; dm.textContent='Échec relief : '+err.message; }
@@ -772,10 +779,13 @@ function updateSeaReadouts(){
   if(state.mode==='lagoon')$('mbRead').innerHTML=LG.tide?('mer <b>'+(seaLevelAt(LG.cursor)>=0?'+':'')+seaLevelAt(LG.cursor).toFixed(2)+'</b>'):'LagoonX';
 }
 function setCursor(t){ if(LG.tide)t=Math.max(LG.tide.t0,Math.min(LG.tide.t1,t)); LG.cursor=t;
+  if(LG.tide){ const day=localMidnight(t); if(LG.viewDay==null||Math.abs(day-LG.viewDay)>1000){ LG.viewDay=day; setSliderToDay(); syncDaySel(); } }
   $('timeSlider').value=t; const isNow=Math.abs(t-Date.now())<8*60e3;
   $('timelabel').innerHTML=fmtT(t)+(isNow?' <small>(maintenant)</small>':''); repaintWater(); scheduleCursorSave(); }
 let curSaveT=null; function scheduleCursorSave(){ clearTimeout(curSaveT); curSaveT=setTimeout(persist,300); }
 $('timeSlider').addEventListener('input',()=>setCursor(parseFloat($('timeSlider').value)));
+$('daySel').addEventListener('change',e=>{ if(!LG.tide)return; LG.viewDay=parseFloat(e.target.value); setSliderToDay();
+  let t=LG.viewDay+12*3600e3; t=Math.max(parseFloat($('timeSlider').min),Math.min(parseFloat($('timeSlider').max),t)); setCursor(t); });
 $('btnNow').addEventListener('click',()=>setCursor(Date.now()));
 $('btnMinus').addEventListener('click',()=>setCursor(LG.cursor-15*60e3));
 $('btnPlus').addEventListener('click',()=>setCursor(LG.cursor+15*60e3));
