@@ -7,7 +7,7 @@ modes qui répondent tous à la même question — *« sur ce spot, avec ce vent
 | Calque | Question | Ce qu'on pose | Zone calculée |
 |---|---|---|---|
 | **GlideX** | J'atteins ma cible en plané ? | départ → arrivée + voile | empreinte atteignable (cercle décalé par le vent), verdict ✓/⚠/✕ |
-| **AirsurfX** | Quelle zone au bout de ma corde ? | ancrage(s) + longueur | demi-cercle sous le vent |
+| **AirsurfX** | Quelle zone au bout de ma corde ? | ancrage(s) + longueur | quart de cercle (±45°) sous le vent |
 | **LagoonX** | Quand/où y a-t-il de l'eau ? | point sur le relief LiDAR | profondeur selon la marée, dans le temps |
 
 Fusion **native** de trois prototypes : **GlideX** (plané), **AirsurfX** (longe),
@@ -31,13 +31,19 @@ voir l'eau **LagoonX** sous la fenêtre de vol **AirsurfX**, ou l'empreinte **Gl
   cas chiffrés (Bandit 16, 10 kt de cul, cible 500 m → arrivée 656 m sol, 28,8 s, 62,5 km/h).
   Base voiles (Flare Bandit / Moustache), fourchette de finesse best/prudente, marge de
   sécurité, temps de vol, vitesse sol, composante vent, verdict.
-- **AirsurfX** : multi-cordes nommées, demi-cercle sous le vent, étiquette de longueur sur la
-  carte, poignée de réglage, curseur 100–1000 m (saisie libre jusqu'à 5 km).
+- **AirsurfX** : multi-cordes nommées, **fenêtre de vol en quart de cercle** (±45° sous le
+  vent), étiquette de longueur sur la carte, poignée de position, curseur 100–1000 m (saisie
+  libre jusqu'à 5 km).
   - **Plané depuis la corde (3D)** : corde fixe de longueur L attachée à l'ancrage. On règle la
     **hauteur h** sur la corde ; l'app place la position en l'air à la distance horizontale
     `√(L²−h²)` sous le vent, à l'altitude h, et calcule (finesse GlideX + vent) la **zone de
     plané atteignable** en larguant à cette hauteur + le **verdict de retour à l'ancrage**
     (plané amont contre le vent). C'est la combinaison GlideX × AirsurfX en 3D.
+  - **Verrouillage longueur / vent** : fige l'un ou l'autre pour ne déplacer, à la souris,
+    que la position du pilote dans la fenêtre (quart de cercle ±45°).
+- **GlideX × AirsurfX** : option *« départ lié à la position sur la corde »* — le point de
+  départ du plané se cale automatiquement sur la position 3D du pilote (hauteur + angle) de
+  la corde sélectionnée, Δh = hauteur ; sinon départ libre.
 - **LagoonX** : moteur repris **verbatim** (seuil hydraulique par *priority-flood*, marée
   Open-Meteo). Clic → analyse d'une zone ~3×3 km, overlay de profondeur coloré, **barre
   temporelle** (Maintenant / ±15 min / ▶) qui remplit et vide l'eau, prochaines PM/BM +
