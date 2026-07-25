@@ -246,6 +246,7 @@
           <label class="inline"><input type="checkbox" id="lockWind"> 🔒 vent</label>
         </div>
         <div class="sub" style="margin-top:4px">Zone = quart de cercle (±45° sous le vent). Surface : <span id="lArea">—</span></div>
+        <div class="sub" style="margin-top:2px">Sur la carte : poignée <b style="color:#f2a23d">pilote</b> = longueur + position sur l'arc ; <b style="color:#f2a23d">flèche</b> = direction du vent.</div>
       </section>
       <section>
         <h2>Vol 3D depuis la corde</h2>
@@ -495,10 +496,10 @@ function setWind(dir,kt){
 let compassDrag=false;
 function compassPick(ev){ const rect=compass.getBoundingClientRect();
   const x=ev.clientX-rect.left-rect.width/2,y=ev.clientY-rect.top-rect.height/2; if(x===0&&y===0)return;
-  setWind(norm360(Math.atan2(x,-y)*R2D),null); }
+  applyWindLight(norm360(Math.atan2(x,-y)*R2D)); }
 compass.addEventListener('pointerdown',ev=>{compassDrag=true;compass.setPointerCapture(ev.pointerId);compassPick(ev);});
 compass.addEventListener('pointermove',ev=>{if(compassDrag)compassPick(ev);});
-compass.addEventListener('pointerup',()=>{compassDrag=false;persist();});
+compass.addEventListener('pointerup',()=>{compassDrag=false;setWind(state.wind.dir,null);persist();});
 $('windDir').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(v,null);persist();}});
 $('windKt').addEventListener('input',e=>{const v=+e.target.value;if(Number.isFinite(v)){setWind(null,v);persist();}});
 
@@ -580,7 +581,10 @@ $('gAnchor').addEventListener('change',e=>{ g.anchored=e.target.checked;
   redrawVisible(); persist(); });
 
 /* ===================== AIRSURFX ===================== */
-const L_=state.longe; let anchorMarkers=[],handleMarker=null;
+const L_=state.longe;
+let anchorMarkers=[], longeItems=[];              // marqueurs & couches par corde (maj en place)
+let pilotHandle=null, windHandle=null;            // poignées de la corde sélectionnée
+let pilotLine=null, windLine=null, footPlan=null, footBest=null;   // tracés de la corde sélectionnée
 const SECTOR=45;                                  // demi-angle du quart de cercle (°)
 const angleDiff=(b,ref)=>((b-ref+540)%360)-180;
 const anchorIcon=sel=>L.divIcon({className:'anchor-icon',iconSize:[26,26],iconAnchor:[13,13],
@@ -593,6 +597,15 @@ function ropePilot(p){ const Ln=p.rope, h=Math.max(0,Math.min(Ln,p.h||0)), pos=M
   return {L:Ln,h,pos,rh,brg,Pa,P:{lat:Pa[0],lng:Pa[1]}}; }
 function pilotIconH(h){ return L.divIcon({className:'pilot-icon',iconSize:[0,0],
   html:`<div style="transform:translate(-50%,-50%);text-align:center;white-space:nowrap"><svg width="22" height="22" style="filter:drop-shadow(0 0 3px #000)"><circle cx="11" cy="11" r="8" fill="#f2a23d" stroke="#0c1311" stroke-width="2"/></svg>${h>0?`<div style="color:#ffe0b0;font-weight:700;font-size:11px;text-shadow:0 0 3px #000,0 0 5px #000">${Math.round(h)} m</div>`:''}</div>`}); }
+// poignée de vent (bout de la flèche, en amont) : oriente le vent global
+const windHandleIcon=L.divIcon({className:'handle-icon',iconSize:[24,24],iconAnchor:[12,12],
+  html:`<svg width="24" height="24"><circle cx="12" cy="12" r="9" fill="#f2a23d" stroke="#0c1311" stroke-width="2"/><path d="M12 6 L12 18 M12 6 L9 10 M12 6 L15 10" stroke="#0c1311" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`});
+function ropeLabelIcon(p,sel){ return L.divIcon({className:'rope-label'+(sel?'':' dim'),iconSize:[0,0],
+  html:`<span>${p.name?`<small>${esc(p.name)}</small>`:''}${fmtM(p.rope)}</span>`}); }
+function ropeGeom(p){ const down=norm360(state.wind.dir+180), circle=[], arc=[[p.lat,p.lng]];
+  for(let a=0;a<360;a+=4)circle.push(dest(p.lat,p.lng,a,p.rope));
+  for(let a=-SECTOR;a<=SECTOR;a+=3)arc.push(dest(p.lat,p.lng,down+a,p.rope));
+  return {circle,arc,mid:dest(p.lat,p.lng,down,p.rope*0.55)}; }
 function glideReach(from,to,dhAvail){ const {k}=glideK(),u=windUnit(state.wind.dir),{dE,dN}=enu(from,to);
   const pu=dE*u[0]+dN*u[1],D=Math.hypot(dE,dN),k2=k*k,R0=(Math.sqrt(k2*pu*pu+(1-k2)*D*D)-k*pu)/(1-k2);
   return {D,R0,okPlan:R0/g.fPlan<=dhAvail,okBest:R0/g.fBest<=dhAvail}; }
@@ -606,47 +619,84 @@ function refresh3DPanel(){ const p=selRope(),on=!!(p&&p.h!=null); $('r3d').check
 function sync3DInputs(){ const p=selRope(); if(!p||p.h==null)return; $('rHRange').max=Math.max(10,p.rope);
   $('rHRange').value=Math.min(p.rope,p.h); $('rHNum').value=Math.round(p.h);
   $('rPosRange').value=Math.round(p.pos||0); $('rPosNum').value=Math.round(p.pos||0); }
+// (re)crée ou met à jour en place les tracés propres à la corde sélectionnée ; renvoie {pil, info}
+function drawSelOverlays(p){
+  const pil=ropePilot(p); let info=null;
+  if(!pilotLine)pilotLine=L.polyline([[p.lat,p.lng],pil.Pa],{color:'#f2a23d',weight:2,opacity:.85,interactive:false}).addTo(longeLayer);
+  else pilotLine.setLatLngs([[p.lat,p.lng],pil.Pa]);
+  const wTail=dest(p.lat,p.lng,state.wind.dir,p.rope*1.35);   // trait de vent, de l'amont vers l'ancrage
+  if(!windLine)windLine=L.polyline([wTail,[p.lat,p.lng]],{color:'#f2a23d',weight:1.5,opacity:.5,dashArray:'3 6',interactive:false}).addTo(longeLayer);
+  else windLine.setLatLngs([wTail,[p.lat,p.lng]]);
+  if(pil.h>0){ const {k}=glideK(),u=windUnit(state.wind.dir),R0b=g.fBest*pil.h,R0p=g.fPlan*pil.h;
+    const planPts=footprintPoly(pil.P,R0p,k,u), bestPts=footprintPoly(pil.P,R0b,k,u);
+    if(!footPlan)footPlan=L.polygon(planPts,{color:'#79d29a',weight:1.5,opacity:.75,fillColor:'#79d29a',fillOpacity:.15,interactive:false}).addTo(longeLayer); else footPlan.setLatLngs(planPts);
+    if(!footBest)footBest=L.polygon(bestPts,{color:'#cdeede',weight:1,opacity:.5,dashArray:'5 6',fill:false,interactive:false}).addTo(longeLayer); else footBest.setLatLngs(bestPts);
+    info={rh:pil.rh,h:pil.h,k,R0p,reach:glideReach(pil.P,{lat:p.lat,lng:p.lng},pil.h)};
+  } else { if(footPlan){longeLayer.removeLayer(footPlan);footPlan=null;} if(footBest){longeLayer.removeLayer(footBest);footBest=null;} }
+  return {pil,info};
+}
+function removeHandles(){ if(pilotHandle){map.removeLayer(pilotHandle);pilotHandle=null;} if(windHandle){map.removeLayer(windHandle);windHandle=null;} }
+
+// reconstruction complète — changements de structure (sélection, ajout/suppression, calque, mode)
 function drawLonge(){
   longeLayer.clearLayers();
+  longeItems=[]; pilotLine=windLine=footPlan=footBest=null;
   const focused=state.mode==='longe';
-  if(!state.layers.longe){ anchorMarkers.forEach(m=>map.removeLayer(m));anchorMarkers=[]; if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} if(focused)longeReadouts(); if(g.anchored&&state.layers.glide)drawGlide(); return; }
-  const down=norm360(state.wind.dir+180);
-  L_.ropes.forEach((p,i)=>{ const sel=i===L_.sel,circle=[],arc=[[p.lat,p.lng]];
-    for(let a=0;a<360;a+=4)circle.push(dest(p.lat,p.lng,a,p.rope));
-    for(let a=-SECTOR;a<=SECTOR;a+=3)arc.push(dest(p.lat,p.lng,down+a,p.rope));
-    L.polygon(circle,{color:'#e9efeb',weight:1,opacity:sel?.4:.22,dashArray:'6 7',fill:false,interactive:false}).addTo(longeLayer);
-    L.polygon(arc,{color:'#43ccd6',weight:sel?2:1.4,opacity:sel?.95:.55,fillColor:'#43ccd6',fillOpacity:sel?.20:.10,interactive:false}).addTo(longeLayer);
-    const mid=dest(p.lat,p.lng,down,p.rope*0.55);
-    L.marker(mid,{icon:L.divIcon({className:'rope-label'+(sel?'':' dim'),html:`<span>${p.name?`<small>${esc(p.name)}</small>`:''}${fmtM(p.rope)}</span>`,iconSize:[0,0]}),interactive:false,keyboard:false}).addTo(longeLayer);
+  if(!state.layers.longe){ anchorMarkers.forEach(m=>map.removeLayer(m));anchorMarkers=[]; removeHandles(); if(focused)longeReadouts(); if(g.anchored&&state.layers.glide)drawGlide(); return; }
+  L_.ropes.forEach((p,i)=>{ const sel=i===L_.sel, gm=ropeGeom(p);
+    longeItems[i]={
+      circle:L.polygon(gm.circle,{color:'#e9efeb',weight:1,opacity:sel?.4:.22,dashArray:'6 7',fill:false,interactive:false}).addTo(longeLayer),
+      arc:L.polygon(gm.arc,{color:'#43ccd6',weight:sel?2:1.4,opacity:sel?.95:.55,fillColor:'#43ccd6',fillOpacity:sel?.20:.10,interactive:false}).addTo(longeLayer),
+      label:L.marker(gm.mid,{icon:ropeLabelIcon(p,sel),interactive:false,keyboard:false}).addTo(longeLayer)
+    };
   });
   const p=selRope(); let info3d=null;
-  if(p){
-    const pil=ropePilot(p);
-    L.polyline([[p.lat,p.lng],pil.Pa],{color:'#f2a23d',weight:2,opacity:.85,interactive:false}).addTo(longeLayer);
-    if(pil.h>0){ const {k}=glideK(),u=windUnit(state.wind.dir),R0b=g.fBest*pil.h,R0p=g.fPlan*pil.h;
-      L.polygon(footprintPoly(pil.P,R0p,k,u),{color:'#79d29a',weight:1.5,opacity:.75,fillColor:'#79d29a',fillOpacity:.15,interactive:false}).addTo(longeLayer);
-      L.polygon(footprintPoly(pil.P,R0b,k,u),{color:'#cdeede',weight:1,opacity:.5,dashArray:'5 6',fill:false,interactive:false}).addTo(longeLayer);
-      info3d={rh:pil.rh,h:pil.h,k,R0p,reach:glideReach(pil.P,{lat:p.lat,lng:p.lng},pil.h)};
-    }
-    if(focused) positionHandle(pil);
-  }
-  if(focused){ renderMarkers(); } else { anchorMarkers.forEach(m=>map.removeLayer(m));anchorMarkers=[]; if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} }
+  if(p){ const r=drawSelOverlays(p); info3d=r.info; if(focused)positionHandles(r.pil); }
+  if(focused){ renderMarkers(); } else { anchorMarkers.forEach(m=>map.removeLayer(m));anchorMarkers=[]; removeHandles(); }
   if(focused){ longeReadouts(); refresh3DPanel(); update3D(info3d); }
   if(g.anchored&&state.layers.glide)drawGlide();
 }
-function positionHandle(pil){ const p=selRope();
-  if(!p){ if(handleMarker){map.removeLayer(handleMarker);handleMarker=null;} return; }
-  if(!handleMarker){ handleMarker=L.marker(pil.Pa,{icon:pilotIconH(pil.h),draggable:true,zIndexOffset:800}).addTo(map);
-    handleMarker.on('drag',e=>{const p2=selRope();if(!p2)return;const q=e.target.getLatLng(),{dist,brg}=distBearing(p2,{lat:q.lat,lng:q.lng}),h=p2.h||0;
+
+// maj en place (drags, curseurs) — pas de clearLayers ni de recréation → fluide
+function updateLonge(){
+  if(!state.layers.longe)return;
+  L_.ropes.forEach((p,i)=>{ const it=longeItems[i]; if(!it)return; const gm=ropeGeom(p);
+    it.circle.setLatLngs(gm.circle); it.arc.setLatLngs(gm.arc);
+    it.label.setLatLng(gm.mid); it.label.setIcon(ropeLabelIcon(p,i===L_.sel)); });
+  const p=selRope();
+  if(p){ const r=drawSelOverlays(p); if(state.mode==='longe'){ positionHandles(r.pil); update3D(r.info); } }
+  longeReadouts();
+  if(g.anchored&&state.layers.glide)drawGlide();
+}
+
+function positionHandles(pil){ const p=selRope();
+  if(!p||state.mode!=='longe'||!state.layers.longe){ removeHandles(); return; }
+  // poignée pilote (bout de corde) : rayon → longueur, angle → position sur l'arc
+  if(!pilotHandle){ pilotHandle=L.marker(pil.Pa,{icon:pilotIconH(pil.h),draggable:true,title:'Pilote — longueur & position sur l\'arc',zIndexOffset:800}).addTo(map);
+    pilotHandle.on('drag',e=>{ const p2=selRope();if(!p2)return; const q=e.target.getLatLng(),{dist,brg}=distBearing(p2,{lat:q.lat,lng:q.lng}),h=p2.h||0;
       if(!L_.lockLen)p2.rope=Math.min(5000,Math.max(1,Math.round(Math.sqrt(dist*dist+h*h))));
-      if(L_.lockWind){ p2.pos=Math.max(-SECTOR,Math.min(SECTOR,Math.round(angleDiff(brg,norm360(state.wind.dir+180))))); syncRopeInputs(); drawLonge(); renderSpotList(); }
-      else { setWind(norm360(brg-180-(p2.pos||0)),null); syncRopeInputs(); renderSpotList(); } });
-    handleMarker.on('dragend',persist);
-  } else { handleMarker.setLatLng(pil.Pa); handleMarker.setIcon(pilotIconH(pil.h)); } }
+      p2.pos=Math.max(-SECTOR,Math.min(SECTOR,Math.round(angleDiff(brg,norm360(state.wind.dir+180)))));
+      syncRopeInputs(); updateLonge(); });
+    pilotHandle.on('dragend',()=>{persist();renderSpotList();});
+  } else { pilotHandle.setLatLng(pil.Pa); pilotHandle.setIcon(pilotIconH(pil.h)); }
+  // poignée de vent (amont) : oriente le vent global — masquée si le vent est verrouillé
+  if(L_.lockWind){ if(windHandle){map.removeLayer(windHandle);windHandle=null;} }
+  else { const wp=dest(p.lat,p.lng,state.wind.dir,p.rope*1.35);
+    if(!windHandle){ windHandle=L.marker(wp,{icon:windHandleIcon,draggable:true,title:'Direction du vent',zIndexOffset:810}).addTo(map);
+      windHandle.on('drag',e=>{ if(L_.lockWind)return; const p2=selRope();if(!p2)return; const {brg}=distBearing(p2,e.target.getLatLng()); applyWindLight(norm360(brg)); });
+      windHandle.on('dragend',()=>{persist();renderSpotList();});
+    } else windHandle.setLatLng(wp); }
+}
+
+// change le vent global sans tout reconstruire (pendant le drag de la flèche / de la boussole)
+function applyWindLight(dir){ state.wind.dir=norm360(Math.round(dir));
+  $('windDir').value=state.wind.dir; $('windBig').textContent=state.wind.dir+'° · '+cardinal(state.wind.dir)+' · '+state.wind.kt+' kt';
+  drawCompass(); updateLonge(); if(state.layers.glide)drawGlide(); }
+
 function renderMarkers(){ anchorMarkers.forEach(m=>map.removeLayer(m));
   anchorMarkers=L_.ropes.map((p,i)=>{ const m=L.marker([p.lat,p.lng],{icon:anchorIcon(i===L_.sel),draggable:true,title:`${ropeName(p,i)} — ${fmtM(p.rope)}`,zIndexOffset:i===L_.sel?700:400}).addTo(map);
     m.on('click',()=>selectRope(i)); m.on('dragstart',()=>{if(L_.sel!==i)selectRope(i);});
-    m.on('drag',e=>{const q=e.target.getLatLng();p.lat=+q.lat.toFixed(6);p.lng=+q.lng.toFixed(6);drawLonge();});
+    m.on('drag',e=>{const q=e.target.getLatLng();p.lat=+q.lat.toFixed(6);p.lng=+q.lng.toFixed(6);updateLonge();});
     m.on('dragend',()=>{persist();renderSpotList();}); return m; }); }
 function selectRope(i){ L_.sel=i; drawLonge(); renderSpotList(); syncRopeInputs(); refresh3DPanel(); sync3DInputs(); persist(); }
 function addRope(lat,lng){ const prev=selRope()||L_.ropes[L_.ropes.length-1];
@@ -670,21 +720,21 @@ function renameRope(row,p,i){ const lbl=row.querySelector('.lbl'); if(!lbl)retur
   input.addEventListener('blur',commit); input.addEventListener('click',e=>e.stopPropagation()); }
 function syncRopeInputs(){ const p=selRope(); if(!p)return;
   $('ropeRange').value=Math.min(1000,Math.max(100,p.rope)); $('ropeNum').value=p.rope; refresh3DPanel(); sync3DInputs(); }
-$('ropeRange').addEventListener('input',()=>{const p=selRope();if(!p)return;p.rope=+$('ropeRange').value;$('ropeNum').value=p.rope;if(p.h!=null&&p.h>p.rope)p.h=p.rope;refresh3DPanel();drawLonge();renderSpotList();});
-$('ropeRange').addEventListener('change',persist);
+$('ropeRange').addEventListener('input',()=>{const p=selRope();if(!p)return;p.rope=+$('ropeRange').value;$('ropeNum').value=p.rope;if(p.h!=null&&p.h>p.rope)p.h=p.rope;$('rHRange').max=Math.max(10,p.rope);updateLonge();});
+$('ropeRange').addEventListener('change',()=>{persist();renderSpotList();});
 $('ropeNum').addEventListener('input',()=>{const p=selRope();if(!p)return;const v=Math.round(+$('ropeNum').value);
-  if(Number.isFinite(v)&&v>=1){p.rope=Math.min(5000,v);$('ropeRange').value=Math.min(1000,Math.max(100,v));if(p.h!=null&&p.h>p.rope)p.h=p.rope;refresh3DPanel();drawLonge();renderSpotList();persist();}});
+  if(Number.isFinite(v)&&v>=1){p.rope=Math.min(5000,v);$('ropeRange').value=Math.min(1000,Math.max(100,v));if(p.h!=null&&p.h>p.rope)p.h=p.rope;$('rHRange').max=Math.max(10,p.rope);updateLonge();renderSpotList();persist();}});
 $('r3d').addEventListener('change',e=>{const p=selRope();if(!p)return;
   if(e.target.checked)p.h=(p.h!=null?p.h:Math.round(p.rope*0.4)); else delete p.h;
   refresh3DPanel(); sync3DInputs(); drawLonge(); persist();});
 ['rHRange','rHNum'].forEach(id=>$(id).addEventListener('input',e=>{const p=selRope();if(!p||p.h==null)return;
   let v=Math.round(+e.target.value); if(!Number.isFinite(v))return; v=Math.max(0,Math.min(p.rope,v)); p.h=v;
-  $('rHRange').value=v; $('rHNum').value=v; drawLonge(); persist();}));
+  $('rHRange').value=v; $('rHNum').value=v; updateLonge(); persist();}));
 ['rPosRange','rPosNum'].forEach(id=>$(id).addEventListener('input',e=>{const p=selRope();if(!p)return;
   let v=Math.round(+e.target.value); if(!Number.isFinite(v))return; v=Math.max(-SECTOR,Math.min(SECTOR,v)); p.pos=v;
-  $('rPosRange').value=v; $('rPosNum').value=v; drawLonge(); persist();}));
+  $('rPosRange').value=v; $('rPosNum').value=v; updateLonge(); persist();}));
 $('lockLen').addEventListener('change',e=>{L_.lockLen=e.target.checked;persist();});
-$('lockWind').addEventListener('change',e=>{L_.lockWind=e.target.checked;persist();});
+$('lockWind').addEventListener('change',e=>{L_.lockWind=e.target.checked;drawLonge();persist();});
 
 /* ===================== LAGOONX ===================== */
 const WCS='https://servicios.idee.es/wcs-inspire/mdt', WMS_FR='https://data.geopf.fr/wms-r/wms', MARINE='https://marine-api.open-meteo.com/v1/marine';
