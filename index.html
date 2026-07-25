@@ -45,6 +45,9 @@
   .msg.err{color:var(--danger)} .msg.ok{color:var(--ok)} .msg.warn{color:var(--warn)}
   .unit{color:var(--muted);font-size:12px}
   label.fld{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:3px 0}
+  .legs{font-size:11.5px;color:#9fb2a9;margin-top:8px;line-height:1.7;font-variant-numeric:tabular-nums}
+  .legs div{display:flex;justify-content:space-between;gap:8px}
+  .legs b{color:#cfdad4;font-weight:600}
   label.inline{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
   input[type=checkbox]{accent-color:var(--wind)}
 
@@ -225,7 +228,8 @@
       <section>
         <h2>Plané</h2>
         <div class="verdict" id="gVerdict" style="display:none"></div>
-        <div class="kv"><span class="k">Distance</span><span class="v" id="gDist">—</span></div>
+        <div class="kv"><span class="k">Distance totale</span><span class="v" id="gDist">—</span></div>
+        <div class="legs" id="gLegList" style="display:none"></div>
         <label class="fld">Marge sécu arrivée <span><input id="gMargin" type="number" min="0" max="500" step="5" value="20"> <span class="unit">m</span></span></label>
         <details><summary>Détails</summary>
           <div class="kv"><span class="k">Cap</span><span class="v" id="gBrg">—</span></div>
@@ -260,8 +264,8 @@
         <h2>Vol 3D depuis la corde</h2>
         <label class="inline"><input type="checkbox" id="r3d"> Position en l'air + zone de plané</label>
         <div id="r3dPanel" style="display:none;margin-top:6px">
-          <label class="fld">Hauteur <span><input id="rHRange" type="range" min="0" max="1000" step="5" style="width:92px"><input id="rHNum" type="number" min="0" step="5" style="width:50px"> <span class="unit">m</span></span></label>
-          <label class="fld">Position fenêtre <span><input id="rPosRange" type="range" min="-45" max="45" step="1" style="width:92px"><input id="rPosNum" type="number" min="-45" max="45" step="1" style="width:50px"> <span class="unit">°</span></span></label>
+          <label class="fld">Hauteur <span><input id="rHRange" type="range" min="0" max="1000" step="5" style="width:84px"><input id="rHNum" type="number" min="0" step="5" style="width:62px"> <span class="unit">m</span></span></label>
+          <label class="fld">Position fenêtre <span><input id="rPosRange" type="range" min="-45" max="45" step="1" style="width:84px"><input id="rPosNum" type="number" min="-45" max="45" step="1" style="width:62px"> <span class="unit">°</span></span></label>
           <div class="verdict" id="r3dVerdict" style="display:none"></div>
           <details><summary>Détails</summary>
             <div class="kv"><span class="k">Dist. horiz. ancrage</span><span class="v" id="r3dRh">—</span></div>
@@ -545,7 +549,7 @@ function drawGlide(){
     const rp=g.anchored?selRope():null, pil=rp?ropePilot(rp):null;
     $('gAnchorInfo').style.display=g.anchored?'':'none';
     if(pil)$('gAnchorInfo').textContent=`Départ = ${ropeName(rp,L_.sel)} à ${Math.round(pil.h)} m · position ${pil.pos>0?'+':''}${Math.round(pil.pos)}°`; }
-  if(!state.layers.glide||!g.from){ clearGlideMarkers(); if(focused)glideReadouts(null); return; }
+  if(!state.layers.glide||!g.from){ clearGlideMarkers(); if(focused){glideReadouts(null);renderGlideLegs([]);} return; }
   const {k,Vx,W,over}=glideK(),u=windUnit(state.wind.dir);
   if(focused)$('windWarn').textContent=over?'⚠ vent ≥ vitesse air':'';
   const dh=Math.max(0,g.dh),R0b=g.fBest*dh,R0p=g.fPlan*dh;
@@ -556,11 +560,12 @@ function drawGlide(){
 
   // itinéraire = départ → arrivée → points ; faisabilité cumulée (altitude consommée le long du trajet)
   const route=[g.from]; if(g.to)route.push(g.to); g.wp.forEach(w=>route.push(w));
-  let cumBest=0,cumPlan=0,cumD=0,cumT=0,lastLeg=null,worst='ok';
+  let cumBest=0,cumPlan=0,cumD=0,cumT=0,lastLeg=null,worst='ok'; const legs=[];
   for(let i=1;i<route.length;i++){ const m=legMetrics(route[i-1],route[i],k,Vx,W,u);
     cumBest+=m.dhBest; cumPlan+=m.dhPlan; cumD+=m.D; cumT+=m.t; lastLeg=m;
     let v='no'; if(dh-cumPlan>=g.margin)v='ok'; else if(dh-cumBest>=g.margin)v='warn';
     if(v==='no')worst='no'; else if(v==='warn'&&worst==='ok')worst='warn';
+    legs.push({D:m.D,brg:m.brg,dhBest:m.dhBest,dhPlan:m.dhPlan,clearBest:dh-cumBest,clearPlan:dh-cumPlan,v});
     L.polyline([[route[i-1].lat,route[i-1].lng],[route[i].lat,route[i].lng]],{color:SEG_COLOR[v],weight:2.5,opacity:.9,dashArray:'4 5',interactive:false}).addTo(glideLayer);
   }
   // marqueurs (seulement en mode GlideX)
@@ -578,10 +583,18 @@ function drawGlide(){
         mk.on('drag',e=>{const p=e.target.getLatLng();g.wp[i]={lat:+p.lat.toFixed(6),lng:+p.lng.toFixed(6)};drawGlide();}); mk.on('dragend',persist); gWp[i]=mk;
       } else gWp[i].setLatLng([w.lat,w.lng]); });
   } else clearGlideMarkers();
-  // lectures : cumul jusqu'au dernier point
+  // lectures : cumul jusqu'au dernier point + détail par segment
   if(focused){ if(lastLeg)glideReadouts({D:cumD,brg:lastLeg.brg,comp:lastLeg.comp,dhBest:cumBest,dhPlan:cumPlan,clearBest:dh-cumBest,clearPlan:dh-cumPlan,t:cumT,gs:cumT>0?cumD/cumT:0,verdict:worst});
-    else glideReadouts(null); }
+    else glideReadouts(null);
+    renderGlideLegs(legs); }
 }
+// détail par segment : « D→A  dist · cap   reste prudente–best m » (couleur = verdict du point)
+const gPtName=i=>i===0?'D':i===1?'A':String(i+1);
+function renderGlideLegs(legs){ const el=$('gLegList');
+  if(!legs||!legs.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='';
+  el.innerHTML=legs.map((lg,i)=>`<div><span><b>${gPtName(i)}→${gPtName(i+1)}</b> ${fmtM(lg.D)} · ${Math.round(lg.brg)}° ${cardinal(lg.brg)}</span>`+
+    `<span style="color:${SEG_COLOR[lg.v]}">reste ${Math.round(lg.clearPlan)}–${Math.round(lg.clearBest)} m</span></div>`).join(''); }
 function glideReadouts(r){ const set=(id,v)=>$(id).textContent=v,vd=$('gVerdict');
   if(!r){ ['gDist','gBrg','gComp','gDrop','gClear','gTime'].forEach(id=>set(id,'—')); vd.style.display='none';
     if(state.mode==='glide')$('mbRead').textContent='GlideX · vent '+state.wind.dir+'° '+state.wind.kt+'kt'; return; }
@@ -634,6 +647,9 @@ const windHandleIcon=L.divIcon({className:'handle-icon',iconSize:[24,24],iconAnc
 // poignée de longueur (cyan) : sur l'axe central sous le vent, règle uniquement la longueur
 const lengthHandleIcon=L.divIcon({className:'handle-icon',iconSize:[20,20],iconAnchor:[10,10],
   html:`<svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#43ccd6" stroke="#0c1311" stroke-width="2"/></svg>`});
+// version verrouillée (grisée) : non déplaçable quand 🔒 longueur est actif
+const lengthHandleIconLocked=L.divIcon({className:'handle-icon',iconSize:[20,20],iconAnchor:[10,10],
+  html:`<svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#42544d" stroke="#0c1311" stroke-width="2"/></svg>`});
 function ropeLabelIcon(p,sel){ return L.divIcon({className:'rope-label'+(sel?'':' dim'),iconSize:[0,0],
   html:`<span>${p.name?`<small>${esc(p.name)}</small>`:''}${fmtM(p.rope)}</span>`}); }
 function ropeGeom(p){ const down=norm360(state.wind.dir+180), circle=[], arc=[[p.lat,p.lng]];
@@ -724,8 +740,12 @@ function positionHandles(pil){ const p=selRope();
     lengthHandle.on('drag',e=>{ const p2=selRope();if(!p2||L_.lockLen)return; const {dist}=distBearing(p2,e.target.getLatLng());
       p2.rope=Math.min(5000,Math.max(1,Math.round(dist))); if(p2.h!=null&&p2.h>p2.rope)p2.h=p2.rope;
       syncRopeInputs(); updateLonge(); });
-    lengthHandle.on('dragend',()=>{persist();renderSpotList();});
+    lengthHandle.on('dragend',()=>{persist();renderSpotList();}); lengthHandle._locked=null;
   } else lengthHandle.setLatLng(lenPos);
+  // verrou longueur : poignée non déplaçable + grisée (maj seulement quand l'état change → fluide)
+  if(lengthHandle._locked!==L_.lockLen){ lengthHandle._locked=L_.lockLen;
+    lengthHandle.setIcon(L_.lockLen?lengthHandleIconLocked:lengthHandleIcon);
+    if(lengthHandle.dragging){ L_.lockLen?lengthHandle.dragging.disable():lengthHandle.dragging.enable(); } }
   // 3) vent (amont) — oriente le vent global ; masquée si le vent est verrouillé
   if(L_.lockWind){ if(windHandle){map.removeLayer(windHandle);windHandle=null;} }
   else { const wp=dest(p.lat,p.lng,state.wind.dir,p.rope*1.35);
