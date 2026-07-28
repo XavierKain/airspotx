@@ -297,8 +297,11 @@
       </section>
       <details>
         <summary>Calibration</summary>
+        <div class="sub" style="margin-bottom:4px">Réf. verticale marée→relief : <b id="calBase">—</b> (auto). Ajuste finement ci‑dessous.</div>
         <label class="fld">Décalage niveau <span><input id="calOffset" type="number" step="5" value="0"> <span class="unit">cm</span></span></label>
-        <label class="fld">Décalage horaire marée <span><input id="tideShift" type="number" step="5" value="0"> <span class="unit">min</span></span></label>
+        <div class="row" style="margin:2px 0 3px"><button id="btnCal">🎯 Caler sur ce point</button></div>
+        <div class="sub" id="calHint">Mets le curseur temps au moment où l'eau <b>affleurait</b> le point sondé, puis clique : le décalage s'ajuste tout seul.</div>
+        <label class="fld" style="margin-top:6px">Décalage horaire marée <span><input id="tideShift" type="number" step="5" value="0"> <span class="unit">min</span></span></label>
         <label class="fld">Retard lagune <span><input id="calDelay" type="number" step="5" value="0"> <span class="unit">min</span></span></label>
         <label class="inline" style="margin-top:6px"><input type="checkbox" id="chkRetention"> Rétention (eau piégée à marée descendante)</label>
       </details>
@@ -434,7 +437,7 @@ const state={
   layers:{glide:true,longe:false,lagoon:false},
   glide:{from:null,to:null,wingKey:'flare_bandit',wingSize:'16',vx:50,fBest:8,fPlan:6,dh:200,margin:20,anchored:false},
   longe:{ropes:[],sel:-1,lockLen:false,lockWind:false},
-  lagoon:{off:0,shift:0,lag:0,retention:false,center:null}
+  lagoon:{off:0,vbase:0,shift:0,lag:0,retention:false,center:null}
 };
 function loadState(){
   const h=new URLSearchParams(location.hash.slice(1));
@@ -447,7 +450,7 @@ function deepAssign(dst,src){ for(const k in src){
   else dst[k]=src[k]; } }
 const fromShare=loadState();
 function shareState(){ const d={wind:state.wind,mode:state.mode,view:state.view,layers:state.layers,glide:state.glide,longe:state.longe,
-  lagoon:{off:state.lagoon.off,shift:state.lagoon.shift,lag:state.lagoon.lag,retention:state.lagoon.retention,center:state.lagoon.center}};
+  lagoon:{off:state.lagoon.off,vbase:state.lagoon.vbase,shift:state.lagoon.shift,lag:state.lagoon.lag,retention:state.lagoon.retention,center:state.lagoon.center}};
   return '#s='+encodeURIComponent(JSON.stringify(d)); }
 let saveT=null;
 function persist(){ try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){}
@@ -809,6 +812,9 @@ $('btnAddRope').addEventListener('click',()=>{ state.layers.longe=true; syncLaye
 
 /* ===================== LAGOONX ===================== */
 const WCS='https://servicios.idee.es/wcs-inspire/mdt', WMS_FR='https://data.geopf.fr/wms-r/wms', MARINE='https://marine-api.open-meteo.com/v1/marine';
+// Base de référence verticale marée→relief : la marée « MSL » d'Open-Meteo est ~0,5 m sous le zéro
+// altimétrique des MNT IGN (NGF-IGN69 / Alicante). Sans ce calage, les lagunes hautes sortent « à sec » à tort.
+const DATUM_IGN=0.50;
 const MAX_SPAN_LAT=0.030,MAX_SPAN_LON=0.036;
 const DEPTH_STOPS=[[0.05,[168,224,235,0.35]],[0.25,[110,192,220,0.50]],[0.50,[62,150,200,0.62]],[1.00,[30,100,170,0.72]],[2.00,[12,60,120,0.80]]];
 const JOURS=['dim','lun','mar','mer','jeu','ven','sam'],MOIS=['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
@@ -816,11 +822,13 @@ const LG={ tide:null, dem:null, overlay:null, overlayCanvas:null, cursor:Date.no
 const CanvasOverlay=L.ImageOverlay.extend({ _initImage(){ this._image=this._url; L.DomUtil.addClass(this._image,'leaflet-image-layer lagoon-overlay');
   if(this._zoomAnimated)L.DomUtil.addClass(this._image,'leaflet-zoom-animated'); this._image.onselectstart=L.Util.falseFn; this._image.onmousemove=L.Util.falseFn; } });
 function vOffM(){ return (state.lagoon.off||0)/100; }
+function vBaseM(){ return (state.lagoon.vbase||0); }
+function vTotM(){ return vBaseM()+vOffM(); }   // décalage vertical total (base auto + réglage utilisateur)
 function tShiftMs(){ return (state.lagoon.shift||0)*60e3; }
 function lagMs(){ return (state.lagoon.lag||0)*60e3; }
-function seaLevelAt(t){ return LG.tide.levelFn(t-tShiftMs())+vOffM(); }
-function lagoonLevelAt(t){ return LG.tide.levelFn(t-tShiftMs()-lagMs())+vOffM(); }
-function rollMaxAt(t){ return LG.tide.rollMaxFn(t-tShiftMs()-lagMs())+vOffM(); }
+function seaLevelAt(t){ return LG.tide.levelFn(t-tShiftMs())+vTotM(); }
+function lagoonLevelAt(t){ return LG.tide.levelFn(t-tShiftMs()-lagMs())+vTotM(); }
+function rollMaxAt(t){ return LG.tide.rollMaxFn(t-tShiftMs()-lagMs())+vTotM(); }
 function evEpoch(e){ return e.epoch+tShiftMs(); }
 function fmtT(t,withDay=true){ if(!LG.tide)return '—'; const d=new Date(t+LG.tide.utcOff*1000);
   const hh=String(d.getUTCHours()).padStart(2,'0'),mm=String(d.getUTCMinutes()).padStart(2,'0');
@@ -894,6 +902,8 @@ async function analyzeLagoon(lat,lon){
   const tp=loadTides(lat,lon).catch(e=>{$('tideList').innerHTML=`<div class="msg err">Échec marée : ${e.message}</div>`;});
   try{
     const {g:gg,label}=await loadDemGrid(lat,lon,m=>dm.textContent=m);
+    // base de référence verticale : relief IGN (NGF) → +0,5 m ; relief mondial (géoïde) → 0
+    state.lagoon.vbase=/^IGN/.test(label)?DATUM_IGN:0;
     dm.textContent=`Calcul des seuils (${gg.ncols}×${gg.nrows})…`; await new Promise(r=>setTimeout(r,20));
     gg.thr=priorityFlood(gg.data,gg.ncols,gg.nrows); gg.bounds=[[gg.yll,gg.xll],[gg.yll+gg.nrows*gg.dy,gg.xll+gg.ncols*gg.dx]];
     LG.dem=gg; state.lagoon.center={lat:+lat.toFixed(5),lon:+lon.toFixed(5)};
@@ -929,6 +939,7 @@ function selectPointAt(lat,lon){ if(!LG.dem)return false; const gg=LG.dem;
 function ptDepthAt(t){ const gg=LG.dem,i=LG.pt.idx,Lv=lagoonLevelAt(t); let lvl;
   if(Lv>=gg.thr[i])lvl=Lv; else if(state.lagoon.retention&&rollMaxAt(t)>=gg.thr[i])lvl=gg.thr[i]; else return 0; return Math.max(0,lvl-gg.data[i]); }
 function updateSeaReadouts(){
+  const cb=$('calBase'); if(cb)cb.textContent=(vBaseM()>=0?'+':'')+vBaseM().toFixed(2)+' m'+(state.lagoon.off?` (réglage ${state.lagoon.off>0?'+':''}${state.lagoon.off} cm)`:'');
   $('seaNow').textContent=LG.tide?((seaLevelAt(LG.cursor)>=0?'+':'')+seaLevelAt(LG.cursor).toFixed(2)+' m'):'—';
   if(LG.pt&&LG.dem){ const gg=LG.dem,i=LG.pt.idx;
     if(gg.data[i]<=-2.99){ $('ptAlt').textContent='fond non mesuré'; $('ptThr').textContent='—'; $('ptDepth').textContent='en eau au levé'; }
@@ -1017,6 +1028,17 @@ $('btnPlay').addEventListener('click',()=>{ LG.playing=!LG.playing; $('btnPlay')
   if(id==='calOffset')state.lagoon.off=v; else if(id==='tideShift')state.lagoon.shift=v; else state.lagoon.lag=v;
   repaintWater(); renderTideList(); drawChart(); persist();}));
 $('chkRetention').addEventListener('change',e=>{state.lagoon.retention=e.target.checked;repaintWater();drawChart();persist();});
+// calage assisté : règle le décalage niveau pour que le point sondé soit au bord de l'eau à l'instant affiché
+$('btnCal').addEventListener('click',()=>{
+  if(!LG.pt||!LG.dem||!LG.tide){ $('calHint').textContent='Sonde d\'abord un point sur la lagune.'; return; }
+  const bed=LG.dem.data[LG.pt.idx];
+  if(bed<=-2.99){ $('calHint').textContent='Point « en eau au levé » (fond non mesuré) : choisis un point à fond connu.'; return; }
+  const tideRaw=LG.tide.levelFn(LG.cursor-tShiftMs());
+  state.lagoon.off=Math.round((bed-tideRaw-vBaseM())*100);
+  $('calOffset').value=state.lagoon.off;
+  repaintWater(); drawChart(); renderTideList(); persist();
+  $('calHint').textContent=`Calé : à cet instant, le point (${bed.toFixed(2)} m) est au bord de l'eau (réglage ${state.lagoon.off>0?'+':''}${state.lagoon.off} cm).`;
+});
 
 /* ===================== calques / focus ===================== */
 const HINTS={ glide:'Cliquez pour poser le <b>départ</b>, puis l\'<b>arrivée</b>', longe:'Cliquez pour poser une <b>corde</b>', lagoon:'Cliquez un point à <b>analyser</b> (relief + marée)' };
